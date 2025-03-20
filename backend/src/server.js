@@ -1,82 +1,76 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
 const dotenv = require('dotenv');
+const cors = require('cors');
+const http = require('http');
+const socketio = require('socket.io');
+const connectDB = require('./config/db');
 const path = require('path');
 
-// Routes import
+// Routes
 const userRoutes = require('./routes/userRoutes');
+const hobbyRoutes = require('./routes/hobbyRoutes');
 const eventRoutes = require('./routes/eventRoutes');
-const messageRoutes = require('./routes/messageRoutes');
 
-// Middleware import
-const { errorHandler } = require('./middleware/errorMiddleware');
-const { authMiddleware } = require('./middleware/authMiddleware');
+// Load env variables
+dotenv.config({ path: '../.env' });
 
-// Config
-dotenv.config();
+// Connect to database
+connectDB();
+
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors());
 
-// Static folder
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// File upload directory
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.use('/api/users', userRoutes);
+app.use('/api/hobbies', hobbyRoutes);
 app.use('/api/events', eventRoutes);
-app.use('/api/messages', messageRoutes);
 
-// Error handling middleware
-app.use(errorHandler);
+// Server health check
+app.get('/', (req, res) => {
+  res.send('API is running');
+});
 
-// MongoDB Connection
-mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => {
-    console.log('MongoDB Connected');
-    
-    // Start server after DB connection
-    const server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+const PORT = process.env.PORT || 5000;
 
-    // Socket.io setup
-    const io = require('socket.io')(server, {
-      cors: {
-        origin: '*',
-        methods: ['GET', 'POST']
-      }
-    });
+// Create HTTP server
+const server = http.createServer(app);
 
-    // Socket.io connection
-    io.on('connection', (socket) => {
-      console.log('New client connected');
-      
-      // Join a room
-      socket.on('join', (room) => {
-        socket.join(room);
-      });
-      
-      // Send message
-      socket.on('message', (data) => {
-        io.to(data.room).emit('message', data);
-      });
-      
-      // Disconnect
-      socket.on('disconnect', () => {
-        console.log('Client disconnected');
-      });
-    });
-    
-  })
-  .catch((err) => console.log('MongoDB Connection Error:', err));
+// Set up Socket.io
+const io = socketio(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
 
-module.exports = app; 
+// Socket.io connection events
+io.on('connection', (socket) => {
+  console.log('A user connected');
+  
+  // Join chat room
+  socket.on('join_room', (roomId) => {
+    socket.join(roomId);
+    console.log(`User joined room: ${roomId}`);
+  });
+  
+  // Listen for chat messages
+  socket.on('send_message', (data) => {
+    io.to(data.roomId).emit('receive_message', data);
+  });
+  
+  // Disconnect event
+  socket.on('disconnect', () => {
+    console.log('A user disconnected');
+  });
+});
+
+// Start server
+server.listen(PORT, () => {
+  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+}); 
