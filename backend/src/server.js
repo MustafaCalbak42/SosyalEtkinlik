@@ -5,6 +5,7 @@ const http = require('http');
 const socketio = require('socket.io');
 const connectDB = require('./config/db');
 const path = require('path');
+const socketManager = require('./socket/socketManager');
 
 // Routes
 const userRoutes = require('./routes/userRoutes');
@@ -12,28 +13,26 @@ const hobbyRoutes = require('./routes/hobbyRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 
 // Load env variables
-dotenv.config({ path: '../.env' });
-
-// Connect to database
-connectDB();
+dotenv.config();
 
 const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: [
+    process.env.CLIENT_URL_WEB || 'http://localhost:3000',
+    process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000'
+  ],
+  credentials: true
+}));
 
 // File upload directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Routes
-app.use('/api/users', userRoutes);
-app.use('/api/hobbies', hobbyRoutes);
-app.use('/api/events', eventRoutes);
-
 // Server health check
 app.get('/', (req, res) => {
-  res.send('API is running');
+  res.send('Sosyal Etkinlik API Sunucusu çalışıyor');
 });
 
 const PORT = process.env.PORT || 5000;
@@ -44,33 +43,53 @@ const server = http.createServer(app);
 // Set up Socket.io
 const io = socketio(server, {
   cors: {
-    origin: '*',
+    origin: [
+      process.env.CLIENT_URL_WEB || 'http://localhost:3000',
+      process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000'
+    ],
     methods: ['GET', 'POST'],
+    credentials: true
   },
 });
 
-// Socket.io connection events
-io.on('connection', (socket) => {
-  console.log('A user connected');
-  
-  // Join chat room
-  socket.on('join_room', (roomId) => {
-    socket.join(roomId);
-    console.log(`User joined room: ${roomId}`);
-  });
-  
-  // Listen for chat messages
-  socket.on('send_message', (data) => {
-    io.to(data.roomId).emit('receive_message', data);
-  });
-  
-  // Disconnect event
-  socket.on('disconnect', () => {
-    console.log('A user disconnected');
-  });
-});
+// Socket.io connection handling with dedicated manager
+socketManager(io);
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-}); 
+// MongoDB bağlantısını yapıp, sonrasında API rotalarını tanımlayacağız
+const startServer = async () => {
+  try {
+    // Connect to database - Veritabanına bağlan
+    try {
+      await connectDB();
+      console.log('👍 Veritabanı bağlantısı başarılı, API rotaları etkinleştiriliyor...');
+    } catch (dbError) {
+      console.log('⚠️ Veritabanı bağlantısı başarısız, API rotaları sınırlı çalışacak!');
+    }
+    
+    // API rotalarını tanımla
+    app.use('/api/users', userRoutes);
+    app.use('/api/hobbies', hobbyRoutes);
+    app.use('/api/events', eventRoutes);
+    
+    // Start server - Sunucuyu başlat
+    server.listen(PORT, () => {
+      console.log('------------------------------------------------');
+      console.log('🚀 SUNUCU BAŞLATILDI');
+      console.log(`🔧 Ortam: ${process.env.NODE_ENV}`);
+      console.log(`🌐 Adres: http://localhost:${PORT}`);
+      console.log('📱 Web ve Mobil istemcilere hizmet veriyor');
+      console.log('------------------------------------------------');
+    });
+    
+  } catch (error) {
+    console.log('------------------------------------------------');
+    console.log('⛔ SUNUCU BAŞLATMA HATASI');
+    console.log(`🔍 Hata: ${error.message}`);
+    console.log('💡 Lütfen bağlantı sorunlarını kontrol ediniz.');
+    console.log('------------------------------------------------');
+    process.exit(1);
+  }
+};
+
+// Sunucuyu başlat
+startServer(); 
