@@ -625,6 +625,87 @@ const validateResetToken = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Profil fotoğrafı yükle
+ * @route   POST /api/users/upload-profile-picture
+ * @access  Private
+ */
+const uploadProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lütfen bir resim dosyası yükleyin.'
+      });
+    }
+
+    // Dosya yolu oluştur
+    const profilePicturePath = req.file.path.replace(/\\/g, '/').replace('public/', '');
+
+    // Kullanıcı bilgisini güncelle
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+
+    // Eski profil resmini silmek için gerekli işlemler burada yapılabilir
+    // (Mevcut resim default değilse ve sunucuda depolanıyorsa)
+
+    // Profil resmini güncelle
+    user.profilePicture = profilePicturePath;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profil fotoğrafı başarıyla güncellendi',
+      data: user
+    });
+  } catch (error) {
+    console.error('Profil fotoğrafı yükleme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @desc    Kullanıcı adına göre profil getir
+ * @route   GET /api/users/profile/:username
+ * @access  Private
+ */
+const getUserByUsername = async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username })
+      .select('-password')
+      .populate('hobbies', 'name category description');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Kullanıcı profili getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -637,5 +718,7 @@ module.exports = {
   changePassword,
   forgotPassword,
   resetPassword,
-  validateResetToken
+  validateResetToken,
+  uploadProfilePicture,
+  getUserByUsername
 }; 

@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
 
 // Controller fonksiyonları
 const { 
@@ -14,7 +16,9 @@ const {
   changePassword,
   forgotPassword,
   resetPassword,
-  validateResetToken
+  validateResetToken,
+  uploadProfilePicture,
+  getUserByUsername
 } = require('../controllers/userController');
 
 // Middleware ve Validatörler
@@ -27,6 +31,33 @@ const {
   forgotPasswordValidation,
   resetPasswordValidation
 } = require('../validators/userValidator');
+
+// Profil resmi yüklemek için Multer konfigürasyonu
+const storage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, 'public/uploads/profiles/');
+  },
+  filename: function(req, file, cb) {
+    cb(null, 'profile-' + req.user.id + '-' + Date.now() + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  // Sadece resim dosyalarına izin ver
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Lütfen sadece resim dosyası yükleyin.'), false);
+  }
+};
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 1024 * 1024 * 5 // 5MB
+  },
+  fileFilter: fileFilter
+});
 
 /**
  * @route   POST /api/users/register
@@ -78,6 +109,13 @@ router.get('/validate-reset-token/:token', validateResetToken);
 router.get('/profile', protect, getUserProfile);
 
 /**
+ * @route   GET /api/users/profile/:username
+ * @desc    Kullanıcı adına göre profil getir
+ * @access  Private
+ */
+router.get('/profile/:username', protect, getUserByUsername);
+
+/**
  * @route   PUT /api/users/profile
  * @desc    Kullanıcı profilini güncelle
  * @access  Private
@@ -90,6 +128,13 @@ router.put('/profile', protect, updateProfileValidation, updateUserProfile);
  * @access  Private
  */
 router.put('/change-password', protect, changePasswordValidation, changePassword);
+
+/**
+ * @route   POST /api/users/upload-profile-picture
+ * @desc    Profil fotoğrafı yükle
+ * @access  Private
+ */
+router.post('/upload-profile-picture', protect, upload.single('profilePicture'), uploadProfilePicture);
 
 /**
  * @route   GET /api/users/hobby/:hobbyId

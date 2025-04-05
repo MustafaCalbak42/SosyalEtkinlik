@@ -6,6 +6,7 @@ const socketio = require('socket.io');
 const connectDB = require('./config/db');
 const path = require('path');
 const socketManager = require('./socket/socketManager');
+const fs = require('fs');
 
 // Routes
 const userRoutes = require('./routes/userRoutes');
@@ -29,6 +30,16 @@ app.use(cors({
 
 // File upload directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Statik dosyaları sunmak için middleware ekle
+app.use(express.static('public'));
+
+// Profil resimlerinin yükleneceği dizini oluştur (yoksa)
+const uploadDir = path.join(__dirname, '../public/uploads/profiles');
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Server health check
 app.get('/', (req, res) => {
