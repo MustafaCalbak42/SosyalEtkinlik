@@ -20,15 +20,16 @@ Bu proje, ilgi alanlarına göre kullanıcıları eşleştiren ve sosyal etkinli
 - JWT (kimlik doğrulama)
 - Socket.io (gerçek zamanlı mesajlaşma)
 
-### Frontend (Web)
+### Web (Frontend)
 - React.js
 - React Router
 - Axios
 - React Hook Form
 - Socket.io Client
 - Leaflet (harita)
+- Material UI
 
-### Frontend (Mobil)
+### Mobil (Frontend)
 - React Native
 - React Navigation
 - Axios
@@ -49,16 +50,16 @@ npm install
 npm run dev
 ```
 
-### Web Frontend Kurulumu
+### Web Kurulumu
 ```bash
-cd frontend/web
+cd web
 npm install
 npm start
 ```
 
-### Mobil Frontend Kurulumu
+### Mobil Kurulumu
 ```bash
-cd frontend/mobile
+cd mobile
 npm install
 npx react-native start
 ```
@@ -103,41 +104,43 @@ CLIENT_URL_MOBILE=exp://localhost:19000
 │   │   ├── validators/            # Giriş doğrulama
 │   │   └── server.js              # Ana sunucu dosyası
 │   ├── uploads/                   # Kullanıcı yüklemeleri
+│   ├── public/                    # Statik dosyalar
 │   ├── tests/                     # Test dosyaları
 │   └── package.json               # Backend bağımlılıkları
 │
-├── frontend/                      # Frontend uygulamaları
-│   ├── shared/                    # Paylaşılan kod (web ve mobil arasında)
+├── web/                           # Web uygulaması (React)
+│   ├── public/                    # Statik dosyalar
+│   ├── src/
 │   │   ├── api/                   # API istekleri
 │   │   ├── assets/                # Görseller, fontlar vb.
-│   │   ├── constants/             # Sabitler
-│   │   ├── hooks/                 # Paylaşılan custom hook'lar
-│   │   ├── store/                 # State yönetimi 
+│   │   ├── components/            # UI bileşenleri
+│   │   ├── context/               # Context API
+│   │   ├── layouts/               # Sayfa düzenleri
+│   │   ├── pages/                 # Sayfalar
+│   │   ├── services/              # Servisler
+│   │   ├── store/                 # State yönetimi
 │   │   ├── theme/                 # Tema/tasarım değişkenleri
-│   │   └── utils/                 # Yardımcı fonksiyonlar
-│   │
-│   ├── web/                       # Web uygulaması (React)
-│   │   ├── public/                # Statik dosyalar
-│   │   ├── src/
-│   │   │   ├── components/        # UI bileşenleri
-│   │   │   ├── context/           # Context API
-│   │   │   ├── layouts/           # Sayfa düzenleri
-│   │   │   ├── pages/             # Sayfalar
-│   │   │   ├── App.js             # Ana uygulama bileşeni
-│   │   │   └── index.js           # Giriş noktası
-│   │   └── package.json           # Web bağımlılıkları
-│   │
-│   └── mobile/                    # Mobil uygulama (React Native)
-│       ├── android/               # Android özel dosyaları
-│       ├── ios/                   # iOS özel dosyaları
-│       ├── src/
-│       │   ├── components/        # UI bileşenleri
-│       │   ├── navigation/        # Ekran navigasyonu
-│       │   ├── screens/           # Uygulama ekranları
-│       │   ├── services/          # Mobil özel servisler
-│       │   ├── App.js             # Ana uygulama bileşeni
-│       │   └── index.js           # Giriş noktası
-│       └── package.json           # Mobil bağımlılıkları
+│   │   ├── utils/                 # Yardımcı fonksiyonlar
+│   │   ├── App.js                 # Ana uygulama bileşeni
+│   │   └── index.js               # Giriş noktası
+│   └── package.json               # Web bağımlılıkları
+│
+├── mobile/                        # Mobil uygulama (React Native)
+│   ├── android/                   # Android özel dosyaları
+│   ├── ios/                       # iOS özel dosyaları
+│   ├── src/
+│   │   ├── api/                   # API istekleri
+│   │   ├── assets/                # Görseller, fontlar vb.
+│   │   ├── components/            # UI bileşenleri
+│   │   ├── navigation/            # Ekran navigasyonu
+│   │   ├── screens/               # Uygulama ekranları
+│   │   ├── services/              # Mobil özel servisler 
+│   │   ├── store/                 # State yönetimi
+│   │   ├── theme/                 # Tema/tasarım değişkenleri
+│   │   ├── utils/                 # Yardımcı fonksiyonlar
+│   │   ├── App.js                 # Ana uygulama bileşeni
+│   │   └── index.js               # Giriş noktası
+│   └── package.json               # Mobil bağımlılıkları
 │
 └── docs/                          # Proje dokümantasyonu
 ```
@@ -147,7 +150,7 @@ CLIENT_URL_MOBILE=exp://localhost:19000
 - Backend API, hem web hem mobil uygulamalara hizmet verecek şekilde tasarlanmıştır
 - Socket.io ile gerçek zamanlı iletişim sağlanarak web ve mobil kullanıcıları arasında anlık etkileşim mümkündür
 - Tüm platformlarda aynı JWT kimlik doğrulama sistemi kullanılmaktadır
-- Paylaşılan kodlar (frontend/shared) ile kod tekrarı önlenmektedir
+- Web ve mobil uygulamalar aynı API'yi kullanarak aynı veritabanı üzerinde işlem yapar
 
 ## Notlar
 

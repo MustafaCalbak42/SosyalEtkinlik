@@ -18,7 +18,9 @@ const {
   resetPassword,
   validateResetToken,
   uploadProfilePicture,
-  getUserByUsername
+  getUserByUsername,
+  verifyEmail,
+  resendVerificationEmail
 } = require('../controllers/userController');
 
 // Middleware ve Validatörler
@@ -79,6 +81,20 @@ router.post('/login', loginValidation, loginUser);
  * @access  Public
  */
 router.post('/refresh-token', refreshToken);
+
+/**
+ * @route   GET /api/users/verify-email/:token
+ * @desc    E-posta doğrulama
+ * @access  Public
+ */
+router.get('/verify-email/:token', verifyEmail);
+
+/**
+ * @route   POST /api/users/resend-verification
+ * @desc    Doğrulama e-postasını tekrar gönder
+ * @access  Public
+ */
+router.post('/resend-verification', resendVerificationEmail);
 
 /**
  * @route   POST /api/users/forgot-password

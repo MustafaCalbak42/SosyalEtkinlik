@@ -18,6 +18,84 @@ axiosInstance.interceptors.request.use(
 );
 
 /**
+ * Kullanıcı giriş işlemi yapar
+ * @param {Object} loginData - Giriş bilgileri (email, password)
+ * @returns {Promise<Object>}
+ */
+export const loginUser = async (loginData) => {
+  try {
+    const response = await axios.post(`${API_URL}/login`, loginData);
+    
+    // Token'ı localStorage'a kaydet
+    if (response.data.success && response.data.data && response.data.data.token) {
+      localStorage.setItem('token', response.data.data.token);
+      localStorage.setItem('refreshToken', response.data.data.refreshToken);
+    }
+    
+    return response.data;
+  } catch (error) {
+    throw handleError(error);
+  }
+};
+
+/**
+ * Kullanıcı kaydı yapar
+ * @param {Object} registerData - Kayıt bilgileri
+ * @returns {Promise<Object>}
+ */
+export const registerUser = async (registerData) => {
+  try {
+    const response = await axios.post(`${API_URL}/register`, registerData);
+    
+    // Not: Kayıt sonrası token oluşmadığı için localStorage'a kaydetmiyoruz
+    // Önce e-posta doğrulanması gerekiyor
+    
+    return response.data;
+  } catch (error) {
+    throw handleError(error);
+  }
+};
+
+/**
+ * E-posta doğrulama işlemi için yeni bağlantı gönderir
+ * @param {Object} emailData - E-posta bilgisi
+ * @returns {Promise<Object>}
+ */
+export const resendVerificationEmail = async (emailData) => {
+  try {
+    const response = await axios.post(`${API_URL}/resend-verification`, emailData);
+    
+    // Test modunda ise ve response.developerInfo varsa, bu bilgiyi döndür
+    if (response.data.developerInfo && response.data.developerInfo.emailPreviewUrl) {
+      return {
+        ...response.data,
+        testEmailUrl: response.data.developerInfo.emailPreviewUrl
+      };
+    }
+    
+    return response.data;
+  } catch (error) {
+    throw handleError(error);
+  }
+};
+
+/**
+ * Kullanıcı çıkış işlemi
+ */
+export const logoutUser = () => {
+  localStorage.removeItem('token');
+};
+
+/**
+ * Token'ın geçerli olup olmadığını kontrol eder
+ * @returns {boolean}
+ */
+export const isAuthenticated = () => {
+  const token = localStorage.getItem('token');
+  return !!token;
+};
+
+/**
  * Kullanıcı profil bilgilerini getirir
  * @returns {Promise<Object>}
  */

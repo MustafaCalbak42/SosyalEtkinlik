@@ -16,7 +16,6 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import EventIcon from '@mui/icons-material/Event';
-import PeopleIcon from '@mui/icons-material/People';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';

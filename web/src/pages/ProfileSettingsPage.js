@@ -40,7 +40,7 @@ function TabPanel(props) {
 }
 
 const ProfileSettingsPage = () => {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   
   const [tabValue, setTabValue] = useState(0);
