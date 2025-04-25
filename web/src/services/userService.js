@@ -211,6 +211,20 @@ export const forgotPassword = async (emailData) => {
 };
 
 /**
+ * Şifre sıfırlama kodunu doğrular
+ * @param {Object} data - Email ve kod bilgisi
+ * @returns {Promise<Object>}
+ */
+export const verifyResetCode = async (data) => {
+  try {
+    const response = await axios.post(`${API_URL}/verify-reset-code`, data);
+    return response.data;
+  } catch (error) {
+    throw handleError(error);
+  }
+};
+
+/**
  * Şifre sıfırlama tokenını doğrular
  * @param {string} token - Doğrulanacak token
  * @returns {Promise<Object>}
@@ -225,13 +239,13 @@ export const validateResetToken = async (token) => {
 };
 
 /**
- * Şifreyi sıfırlar
- * @param {Object} passwordData - Şifre sıfırlama bilgileri
+ * Yeni şifre ile şifreyi sıfırlar
+ * @param {Object} data - Şifre sıfırlama bilgileri (email, verificationId, newPassword)
  * @returns {Promise<Object>}
  */
-export const resetPassword = async (passwordData) => {
+export const resetPassword = async (data) => {
   try {
-    const response = await axios.post(`${API_URL}/reset-password`, passwordData);
+    const response = await axios.post(`${API_URL}/reset-password`, data);
     return response.data;
   } catch (error) {
     throw handleError(error);

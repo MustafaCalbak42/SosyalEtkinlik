@@ -1,181 +1,147 @@
 import React, { useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { 
   Container, 
   Box, 
+  Paper, 
   TextField, 
   Button, 
   Typography, 
-  Paper, 
-  Grid, 
+  Alert, 
   Link, 
-  InputAdornment,
-  Alert,
-  CircularProgress,
-  Divider
+  CircularProgress 
 } from '@mui/material';
-import { Email as EmailIcon, ArrowBack as ArrowBackIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
-import { Link as RouterLink } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { forgotPassword } from '../services/userService';
 
 const ForgotPasswordPage = () => {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [testEmailUrl, setTestEmailUrl] = useState('');
-  const [emailSent, setEmailSent] = useState('');
-  
-  const onSubmit = async (data) => {
-    setLoading(true);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setEmail(e.target.value);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError('');
     setSuccess(false);
-    setTestEmailUrl('');
-    setEmailSent(data.email);
+    
+    if (!email) {
+      setError('Email adresi giriniz');
+      return;
+    }
+
+    setLoading(true);
     
     try {
-      const response = await forgotPassword({ email: data.email });
-      setSuccess(true);
+      const response = await forgotPassword({ email });
+      console.log('Şifremi unuttum cevabı:', response);
       
-      // Geliştirme ortamında test e-posta URL'sini göster
-      if (response.developerInfo && response.developerInfo.emailPreviewUrl) {
-        setTestEmailUrl(response.developerInfo.emailPreviewUrl);
+      if (response.success) {
+        setSuccess(true);
+        
+        // Geliştirme ortamında kod bilgisi varsa debug amaçlı konsola yazalım
+        if (response.developerInfo && response.developerInfo.resetCode) {
+          console.log('Debug - Sıfırlama kodu:', response.developerInfo.resetCode);
+        }
       }
     } catch (err) {
       console.error('Şifremi unuttum hatası:', err);
-      setError(err.message || 'Şifre sıfırlama isteği gönderilirken bir hata oluştu.');
+      setError(
+        err.response?.data?.message || 
+        'Bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
+      );
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleContinue = () => {
+    navigate('/verify-reset-code', { 
+      state: { email } 
+    });
   };
 
   return (
     <Container component="main" maxWidth="xs">
       <Box
         sx={{
+          marginTop: 8,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          py: 8
         }}
       >
-        <Paper elevation={3} sx={{ p: 4, width: '100%', borderRadius: 2 }}>
-          <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <Typography component="h1" variant="h5" fontWeight="bold">
-              Şifremi Unuttum
-            </Typography>
-            <Typography variant="body2" color="textSecondary" sx={{ mt: 1, textAlign: 'center' }}>
-              E-posta adresinizi girin, size şifre sıfırlama bağlantısı göndereceğiz.
-            </Typography>
-          </Box>
-
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+        <Paper 
+          elevation={3} 
+          sx={{ 
+            p: 4, 
+            width: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center' 
+          }}
+        >
+          <Typography component="h1" variant="h5" gutterBottom>
+            Şifremi Unuttum
+          </Typography>
+          
+          <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 3 }}>
+            Kayıtlı email adresinizi girin, şifre sıfırlama kodu göndereceğiz.
+          </Typography>
+          
+          {error && <Alert severity="error" sx={{ width: '100%', mb: 2 }}>{error}</Alert>}
+          {success && (
+            <Alert severity="success" sx={{ width: '100%', mb: 2 }}>
+              Şifre sıfırlama talimatları email adresinize gönderildi. Lütfen mail kutunuzu kontrol edin.
             </Alert>
           )}
-
-          {success && !testEmailUrl && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              <Typography variant="body2" fontWeight="bold">
-                {emailSent} adresine şifre sıfırlama bağlantısı gönderildi.
-              </Typography>
-              <Box mt={1}>
-                <Typography variant="body2">
-                  Lütfen e-posta kutunuzu kontrol edin. E-posta birkaç dakika içinde gelebilir.
-                </Typography>
-                <Typography variant="body2" mt={1}>
-                  E-postayı göremiyorsanız spam/gereksiz klasörünü de kontrol etmeyi unutmayın.
-                </Typography>
-              </Box>
-            </Alert>
-          )}
-
-          {success && testEmailUrl && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.
-            </Alert>
-          )}
-
-          <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 1 }}>
+          
+          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
             <TextField
               margin="normal"
               required
               fullWidth
               id="email"
-              label="E-posta Adresi"
+              label="Email Adresi"
+              name="email"
               autoComplete="email"
               autoFocus
-              disabled={loading}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <EmailIcon />
-                  </InputAdornment>
-                ),
-              }}
-              {...register('email', { 
-                required: 'E-posta adresi gereklidir',
-                pattern: {
-                  value: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/i,
-                  message: 'Geçerli bir e-posta adresi girin'
-                }
-              })}
-              error={!!errors.email}
-              helperText={errors.email?.message}
+              value={email}
+              onChange={handleChange}
+              disabled={loading || success}
             />
             
+            {!success ? (
             <Button
               type="submit"
               fullWidth
               variant="contained"
               sx={{ mt: 3, mb: 2, py: 1.2 }}
-              disabled={loading}
+                disabled={loading}
             >
-              {loading ? <CircularProgress size={24} /> : success ? 'Tekrar Gönder' : 'Şifre Sıfırlama Bağlantısı Gönder'}
+              {loading ? <CircularProgress size={24} /> : 'Sıfırlama Kodu Gönder'}
             </Button>
-            
-            {testEmailUrl && (
-              <>
-                <Divider sx={{ my: 2 }}>
-                  <Typography variant="caption" color="textSecondary">
-                    Test E-postası
-                  </Typography>
-                </Divider>
-                <Box sx={{ mt: 2, mb: 2, textAlign: 'center' }}>
-                  <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                    Bu sadece geliştirme ortamında görünür
-                  </Typography>
-                  <Button 
-                    variant="outlined" 
-                    startIcon={<OpenInNewIcon />}
-                    component="a"
-                    href={testEmailUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ width: '100%' }}
-                  >
-                    Test E-postasını Görüntüle
-                  </Button>
-                </Box>
-              </>
+            ) : (
+              <Button
+                fullWidth
+                variant="contained"
+                color="success"
+                sx={{ mt: 3, mb: 2, py: 1.2 }}
+                onClick={handleContinue}
+              >
+                Kodu Doğrula
+              </Button>
             )}
             
-            <Grid container>
-              <Grid item>
-                <Link 
-                  component={RouterLink} 
-                  to="/login" 
-                  variant="body2"
-                  sx={{ display: 'flex', alignItems: 'center' }}
-                >
-                  <ArrowBackIcon fontSize="small" sx={{ mr: 0.5 }} />
-                  Giriş sayfasına dön
-                </Link>
-              </Grid>
-            </Grid>
+            <Box sx={{ textAlign: 'center' }}>
+              <Link component={RouterLink} to="/login" variant="body2">
+                Giriş sayfasına dön
+              </Link>
+            </Box>
           </Box>
         </Paper>
       </Box>

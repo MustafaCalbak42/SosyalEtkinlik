@@ -4,9 +4,10 @@
  */
 
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API temel URL (web ve mobil için ortak)
-let BASE_URL = 'http://localhost:5000/api';
+let BASE_URL = 'http://10.0.2.2:5000/api'; // Android Emulator için localhost
 
 // Platform bazlı konfigürasyon
 if (process.env.REACT_APP_API_URL) {
@@ -16,6 +17,8 @@ if (process.env.REACT_APP_API_URL) {
   // React Native (Expo) için
   BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 }
+
+console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
 
 // Axios instance oluştur
 const apiClient = axios.create({
@@ -27,63 +30,49 @@ const apiClient = axios.create({
 
 // İstek engelleme (interceptors)
 apiClient.interceptors.request.use(
-  (config) => {
-    // Mevcut token'ı depodan al (localStorage veya AsyncStorage)
-    const token = getToken();
-    
+  async (config) => {
+    const token = await AsyncStorage.getItem('token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
-    
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Yanıt engelleme
 apiClient.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    // Yetkilendirme hatası (401)
-    if (error.response && error.response.status === 401) {
-      // Token yenileme veya çıkış işlemleri
-      logout();
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Token geçersiz olduğunda yenileme işlemi
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        const refreshToken = await AsyncStorage.getItem('refreshToken');
+        const response = await axios.post(`${BASE_URL}/users/refresh-token`, { refreshToken });
+        
+        if (response.data.success) {
+          const { token } = response.data.data;
+          await AsyncStorage.setItem('token', token);
+          
+          // Yeni token ile isteği tekrar gönder
+          originalRequest.headers['Authorization'] = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        }
+      } catch (refreshError) {
+        // Token yenileme başarısız, kullanıcı çıkışı yapılmalı
+        await AsyncStorage.removeItem('token');
+        await AsyncStorage.removeItem('refreshToken');
+        await AsyncStorage.removeItem('user');
+      }
     }
     
     return Promise.reject(error);
   }
 );
-
-// Token alıcı - platform bazlı depolama kullanır
-const getToken = () => {
-  // Web platformda
-  if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem('authToken');
-  }
-  
-  // Bu fonksiyon asenkron olmalı ama basitlik için senkron yapıda tutuldu
-  // Gerçek bir uygulamada AsyncStorage'dan alınan token için farklı bir yaklaşım gerekir
-  return null; 
-};
-
-// Çıkış işlemi - platform bazlı
-const logout = () => {
-  // Web platformda
-  if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
-    
-    // Anasayfaya yönlendir (web için)
-    window.location.href = '/login';
-  }
-  
-  // Mobil platformda farklı işlemler gerekecek
-  // Bu kısım native kod içinde ele alınacak
-};
 
 // API Fonksiyonları
 const api = {
@@ -91,8 +80,42 @@ const api = {
   auth: {
     login: (credentials) => apiClient.post('/users/login', credentials),
     register: (userData) => apiClient.post('/users/register', userData),
-    getProfile: () => apiClient.get('/users/profile'),
-    updateProfile: (profileData) => apiClient.put('/users/profile', profileData),
+    forgotPassword: (emailData) => apiClient.post('/users/forgot-password', emailData),
+    verifyResetCode: (verificationData) => apiClient.post('/users/verify-reset-code', verificationData),
+    resetPassword: (passwordData) => apiClient.post('/users/reset-password', passwordData),
+    resendVerification: (emailData) => apiClient.post('/users/resend-verification', emailData),
+    verifyEmail: (token) => apiClient.get(`/users/verify-email/${token}`),
+    handleEmailVerified: async (verificationData) => {
+      try {
+        // Tokenleri saklama
+        if (verificationData.token) {
+          await AsyncStorage.setItem('token', verificationData.token);
+        }
+        
+        if (verificationData.refreshToken) {
+          await AsyncStorage.setItem('refreshToken', verificationData.refreshToken);
+        }
+        
+        // Kullanıcı bilgisini al
+        const userResponse = await apiClient.get('/users/profile');
+        
+        if (userResponse.data && userResponse.data.success) {
+          // Kullanıcı bilgilerini döndür
+          return {
+            success: true,
+            data: userResponse.data.data
+          };
+        }
+        
+        return { success: true };
+      } catch (error) {
+        console.error('E-posta doğrulama işleme hatası:', error);
+        return {
+          success: false,
+          message: 'Doğrulama işlenirken bir hata oluştu'
+        };
+      }
+    }
   },
   
   // Etkinlikler
@@ -116,9 +139,10 @@ const api = {
   },
   
   // Kullanıcılar
-  users: {
-    follow: (userId) => apiClient.put(`/users/follow/${userId}`),
-    unfollow: (userId) => apiClient.put(`/users/unfollow/${userId}`),
+  user: {
+    getProfile: () => apiClient.get('/users/profile'),
+    updateProfile: (userData) => apiClient.put('/users/profile', userData),
+    changePassword: (passwordData) => apiClient.post('/users/change-password', passwordData),
   }
 };
 

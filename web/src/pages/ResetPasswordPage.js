@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Container, 
   Box, 
@@ -10,91 +10,79 @@ import {
   InputAdornment, 
   IconButton,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Avatar
 } from '@mui/material';
-import { Visibility, VisibilityOff, LockOutlined as LockIcon } from '@mui/icons-material';
-import { useNavigate, Link as RouterLink, useParams } from 'react-router-dom';
+import { 
+  Visibility, 
+  VisibilityOff, 
+  LockOutlined as LockIcon, 
+  CheckCircleOutline as CheckIcon 
+} from '@mui/icons-material';
+import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { validateResetToken, resetPassword } from '../services/userService';
+import { resetPassword } from '../services/userService';
 
 const ResetPasswordPage = () => {
-  const { token } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { register, handleSubmit, watch, formState: { errors } } = useForm();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [validating, setValidating] = useState(true);
   const [error, setError] = useState('');
-  const [validToken, setValidToken] = useState(false);
+  const [success, setSuccess] = useState(false);
   
-  const password = watch('password');
+  // Verify location state data (from VerifyResetCodePage)
+  const email = location.state?.email || '';
+  const verified = location.state?.verified || false;
+  const verificationId = location.state?.verificationId || '';
+  
+  // Redirect if not coming from verification page
+  if (!verified || !email || !verificationId) {
+    navigate('/forgot-password');
+    return null;
+  }
+  
+  const password = watch('password', '');
   
   const handleClickShowPassword = () => setShowPassword(!showPassword);
-
-  // Token doğrulama
-  useEffect(() => {
-    const checkToken = async () => {
-      try {
-        await validateResetToken(token);
-        setValidToken(true);
-      } catch (err) {
-        setError('Geçersiz veya süresi dolmuş şifre sıfırlama bağlantısı.');
-      } finally {
-        setValidating(false);
-      }
-    };
-
-    if (token) {
-      checkToken();
-    } else {
-      setError('Şifre sıfırlama token\'ı bulunamadı.');
-      setValidating(false);
-    }
-  }, [token]);
 
   const onSubmit = async (data) => {
     setLoading(true);
     setError('');
     
     try {
-      await resetPassword({
-        token,
-        password: data.password
+      // Yeni şifre sıfırlama API'si
+      const response = await resetPassword({
+        email,
+        verificationId,
+        newPassword: data.password
       });
       
-      // Başarılı şifre sıfırlama sonrası giriş sayfasına yönlendir
-      navigate('/login', { 
-        state: { 
-          message: 'Şifreniz başarıyla sıfırlandı. Yeni şifreniz ile giriş yapabilirsiniz.' 
-        } 
-      });
+      if (response.success) {
+        setSuccess(true);
+        
+        // 2 saniye sonra giriş sayfasına yönlendir
+        setTimeout(() => {
+          navigate('/login', { 
+            state: { 
+              message: 'Şifreniz başarıyla değiştirildi. Lütfen yeni şifrenizle giriş yapın.' 
+            } 
+          });
+        }, 2000);
+      } else {
+        setError(response.message || 'Şifre değiştirme işlemi başarısız oldu.');
+      }
     } catch (err) {
-      setError(err.message || 'Şifre sıfırlanırken bir hata oluştu.');
+      console.error('Şifre değiştirme hatası:', err);
+      setError(
+        err.response?.data?.message || 
+        'Şifre değiştirme sırasında bir hata oluştu. Lütfen tekrar deneyin.'
+      );
     } finally {
       setLoading(false);
     }
   };
-
-  if (validating) {
-    return (
-      <Container component="main" maxWidth="xs">
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '100vh'
-          }}
-        >
-          <CircularProgress />
-          <Typography variant="body1" sx={{ mt: 2 }}>
-            Token doğrulanıyor...
-          </Typography>
-        </Box>
-      </Container>
-    );
-  }
 
   return (
     <Container component="main" maxWidth="xs">
@@ -104,35 +92,36 @@ const ResetPasswordPage = () => {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: '100vh',
-          py: 8
+          mt: 8
         }}
       >
         <Paper elevation={3} sx={{ p: 4, width: '100%', borderRadius: 2 }}>
-          <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <LockIcon sx={{ m: 1, fontSize: 40, color: 'primary.main' }} />
-            <Typography component="h1" variant="h5" fontWeight="bold">
-              Şifre Sıfırlama
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Avatar sx={{ m: 1, bgcolor: success ? 'success.main' : 'primary.main', width: 56, height: 56 }}>
+              {success ? <CheckIcon sx={{ fontSize: 32 }} /> : <LockIcon sx={{ fontSize: 32 }} />}
+            </Avatar>
+            
+            <Typography component="h1" variant="h5" fontWeight="bold" gutterBottom>
+              {success ? 'Şifre Değiştirildi' : 'Yeni Şifre Belirle'}
             </Typography>
+            
+            {!success && (
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 3 }}>
+                <strong>{email}</strong> hesabınız için yeni bir şifre belirleyin
+              </Typography>
+            )}
           </Box>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 3, mt: 2 }}>
               {error}
             </Alert>
           )}
-
-          {!validToken ? (
-            <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Button
-                component={RouterLink}
-                to="/forgot-password"
-                variant="contained"
-                sx={{ mt: 2 }}
-              >
-                Yeni Şifre Sıfırlama Bağlantısı Al
-              </Button>
-            </Box>
+          
+          {success ? (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              Şifreniz başarıyla değiştirildi! Giriş sayfasına yönlendiriliyorsunuz...
+            </Alert>
           ) : (
             <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 1 }}>
               <TextField
@@ -206,7 +195,7 @@ const ResetPasswordPage = () => {
                 sx={{ mt: 3, mb: 2, py: 1.2 }}
                 disabled={loading}
               >
-                {loading ? <CircularProgress size={24} /> : 'Şifreyi Sıfırla'}
+                {loading ? <CircularProgress size={24} /> : 'Şifreyi Değiştir'}
               </Button>
               
               <Box sx={{ textAlign: 'center' }}>

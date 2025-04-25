@@ -7,69 +7,67 @@ const nodemailer = require('nodemailer');
 
 // Email transport konfigürasyonu
 const createTransporter = async () => {
-  // Geliştirme ortamında Ethereal.email kullanılır (ETHEREAL_EMAIL=true ise)
-  if (process.env.ETHEREAL_EMAIL === 'true') {
-    console.log('Ethereal Test E-posta hesabı oluşturuluyor...');
+  // Önce Gmail SMTP kullanarak gerçek e-posta gönderimi dene
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD && process.env.ETHEREAL_EMAIL !== 'true') {
+    console.log('Gmail SMTP transporter oluşturuluyor...');
+    
+    // SMTP ayarları
+    const transporterConfig = {
+      service: 'gmail',  // Gmail servisi kullanılıyor
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD // Gmail App Password kullanılmalı
+      }
+    };
+    
+    console.log('SMTP ayarları:');
+    console.log('- Kullanıcı:', process.env.EMAIL_USER);
+    
+    const transporter = nodemailer.createTransport(transporterConfig);
+    
+    // SMTP bağlantısını test et
     try {
-      // Test hesabı oluştur
-      const testAccount = await nodemailer.createTestAccount();
-      console.log('Test Mail Hesabı:', testAccount.user);
-      
-      // Geçici transporter oluştur
-      return nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass
-        }
-      });
+      await transporter.verify();
+      console.log('✅ Gmail SMTP sunucusuna bağlantı başarılı! Gerçek e-posta gönderimi hazır.');
+      return transporter;
     } catch (error) {
-      console.error('Ethereal hesabı oluşturma hatası:', error);
-      throw new Error('Test e-posta ayarlarında sorun: ' + error.message);
+      console.error('❌ Gmail SMTP bağlantı hatası:', error);
+      console.log('SMTP şu hata mesajını döndürdü:', error.message);
+      
+      if (error.message.includes('Invalid login')) {
+        console.log('🔑 Gmail kimlik bilgilerinizi kontrol edin. App Password kullandığınızdan emin olun!');
+        console.log('📝 App Password oluşturmak için: https://myaccount.google.com/apppasswords');
+      }
+      
+      console.log('⚠️ Gmail SMTP hatası nedeniyle Ethereal test sağlayıcısına geçiliyor...');
     }
-  } 
+  }
   
-  // Gmail için SMTP ayarları
-  console.log('Gmail SMTP sunucusu kullanılıyor:', process.env.EMAIL_HOST);
+  // Gmail bağlantısı başarısız olduysa veya geliştirme ortamında isek Ethereal kullan
+  console.log('⚠️ Ethereal test SMTP kullanılıyor...');
   
-  // Gmail özel ayarları
-  const transporterConfig = {
-    service: 'gmail',  // 'gmail' servisi otomatik olarak doğru host ve port'u kullanır
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD // Gmail App Password kullanılmalı
-    }
-  };
-  
-  // Debug bilgisi için
-  console.log('Gmail yapılandırması:');
-  console.log('- Kullanıcı:', process.env.EMAIL_USER);
-  console.log('- Şifre uzunluğu:', process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.length : 0);
-  
-  const transporter = nodemailer.createTransport(transporterConfig);
-  
-  // SMTP bağlantısını test et
   try {
-    await transporter.verify();
-    console.log('✅ Gmail SMTP sunucusuna bağlantı başarılı! E-posta gönderimi hazır.');
+    // Sahte SMTP sunucusu oluştur
+    const testAccount = await nodemailer.createTestAccount();
+    
+    // Test SMTP ayarları
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    });
+    
+    console.log('✅ Test SMTP sunucusu yapılandırıldı.');
+    console.log('👤 Test kullanıcı:', testAccount.user);
+    
     return transporter;
   } catch (error) {
-    console.error('❌ Gmail SMTP sunucusuna bağlantı hatası:', error);
-    console.log('Gmail şu hata mesajını döndürdü:', error.message);
-    
-    if (error.message.includes('Invalid login')) {
-      console.log('🔑 Gmail kimlik bilgilerinizi kontrol edin. App Password kullandığınızdan emin olun!');
-      console.log('📝 App Password oluşturmak için: https://myaccount.google.com/apppasswords');
-    }
-    
-    if (error.message.includes('Less secure app')) {
-      console.log('⚠️ Gmail artık "daha az güvenli uygulamalara erişim" özelliğini desteklemiyor.');
-      console.log('📝 Bunun yerine App Password kullanmalısınız: https://myaccount.google.com/apppasswords');
-    }
-    
-    throw new Error('Gmail SMTP bağlantı hatası: ' + error.message);
+    console.error('❌ Ethereal test hesabı oluşturma hatası:', error);
+    throw new Error('SMTP konfigürasyonu başarısız: ' + error.message);
   }
 };
 
@@ -84,7 +82,7 @@ const sendEmail = async (options) => {
     
     // Email içeriği
     const mailOptions = {
-      from: `${process.env.FROM_NAME || 'Sosyal Etkinlik'} <${process.env.FROM_EMAIL || process.env.EMAIL_USER}>`,
+      from: `${process.env.FROM_NAME || 'Sosyal Etkinlik'} <${process.env.EMAIL_USER || 'noreply@sosyaletkinlik.com'}>`,
       to: options.to,
       subject: options.subject,
       html: options.html
@@ -98,31 +96,30 @@ const sendEmail = async (options) => {
     // Email'i gönder
     const info = await transporter.sendMail(mailOptions);
     
-    if (process.env.ETHEREAL_EMAIL === 'true') {
-      // Geliştirme ortamında test URL'sini yazdır
-      console.log('Test email gönderildi!');
-      console.log('Mail içeriği:', options.subject);
-      console.log('Gönderi sonucu:', info.response);
-      console.log('Test mail görüntüleme URL:', nodemailer.getTestMessageUrl(info));
+    // Gerçek e-posta gönderimi raporu
+    console.log('✅ E-posta başarıyla gönderildi!');
+    console.log('Alıcı:', options.to);
+    console.log('Mesaj ID:', info.messageId);
+    
+    // Ethereal test e-posta URL'si var mı kontrol et
+    let previewUrl = null;
+    if (info.messageId) {
+      if (transporter.options && transporter.options.host === 'smtp.ethereal.email') {
+        previewUrl = nodemailer.getTestMessageUrl(info);
+      } else if (info.testMessageUrl) {
+        previewUrl = info.testMessageUrl;
+      }
       
-      return {
-        success: true,
-        messageId: info.messageId,
-        previewUrl: nodemailer.getTestMessageUrl(info)
-      };
-    } else {
-      // Gerçek e-posta gönderimi için
-      console.log('✅ E-posta başarıyla gönderildi!');
-      console.log('Mail içeriği:', options.subject);
-      console.log('Alıcı:', options.to);
-      console.log('Mesaj ID:', info.messageId);
-      console.log('Gmail yanıtı:', info.response);
-      
-      return {
-        success: true,
-        messageId: info.messageId
-      };
+      if (previewUrl) {
+        console.log('Test e-posta önizleme URL\'si:', previewUrl);
+      }
     }
+    
+    return {
+      success: true,
+      messageId: info.messageId,
+      previewUrl: previewUrl
+    };
   } catch (error) {
     console.error('❌ Email gönderme hatası:', error);
     console.log('Hata detayları:', error.message);
@@ -134,53 +131,103 @@ const sendEmail = async (options) => {
   }
 };
 
+// Önbellek için doğrulama kodları ve şifre sıfırlama kodları
+const verificationStore = {
+  resetCodes: {}, // resetCodes[email] = { code, expires, name }
+};
+
+// Cache olarak şifre sıfırlama kodunu saklama
+const cacheResetCode = (email, code, name, expiresIn = 15) => {
+  verificationStore.resetCodes[email] = {
+    code,
+    expires: new Date(Date.now() + expiresIn * 60 * 1000), // dakika cinsinden
+    name
+  };
+  
+  console.log('Şifre sıfırlama kodu önbelleğe alındı:', email);
+  console.log('Kod:', code);
+  console.log('Geçerlilik süresi:', expiresIn, 'dakika');
+};
+
+// Önbellekteki şifre sıfırlama kodunu kontrol et
+const verifyResetCode = (email, code) => {
+  const storedData = verificationStore.resetCodes[email];
+  
+  if (!storedData) {
+    console.log('Bu e-posta için kayıtlı bir kod bulunamadı:', email);
+    return { valid: false, message: 'Geçersiz kod' };
+  }
+  
+  if (new Date() > storedData.expires) {
+    console.log('Kodun süresi dolmuş:', email);
+    delete verificationStore.resetCodes[email]; // Süresi dolmuş kodu temizle
+    return { valid: false, message: 'Kodun süresi dolmuş' };
+  }
+  
+  if (storedData.code !== code) {
+    console.log('Kod eşleşmedi:', email);
+    return { valid: false, message: 'Geçersiz kod' };
+  }
+  
+  console.log('Kod doğrulandı:', email);
+  // Doğrulama başarılı olduğunda kullanıcı adını da döndür
+  return { 
+    valid: true, 
+    message: 'Kod doğrulandı',
+    name: storedData.name 
+  };
+};
+
 /**
  * Şifre sıfırlama e-postası gönderir
  * @param {string} email - Kullanıcı e-posta adresi
- * @param {string} resetToken - Şifre sıfırlama token'ı
+ * @param {string} resetToken - Şifre sıfırlama token'ı (artık kullanılmıyor)
  * @param {string} name - Kullanıcı adı
  * @returns {Promise<Object>} E-posta gönderim sonucu
  */
 const sendPasswordResetEmail = async (email, resetToken, name) => {
   try {
-    // Web yada mobil uygulama için uygun URL
-    const clientUrl = process.env.CLIENT_URL_WEB || 'http://localhost:3000';
-    const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
+    console.log(`${email} adresine şifre sıfırlama e-postası gönderme işlemi başlatıldı.`);
+    
+    // 6 haneli rastgele kod oluştur
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Kodu önbelleğe al
+    cacheResetCode(email, resetCode, name);
     
     // E-posta içeriği
     const mailOptions = {
       to: email,
-      subject: 'Şifre Sıfırlama İsteği - Sosyal Etkinlik',
+      subject: 'Şifre Sıfırlama Kodu - Sosyal Etkinlik',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
           <h2 style="color: #333;">Şifre Sıfırlama</h2>
           <p>Merhaba ${name || 'Değerli Kullanıcımız'},</p>
-          <p>Hesabınız için bir şifre sıfırlama isteği aldık. Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>
-          <p style="margin: 20px 0;">
-            <a href="${resetUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px;">Şifremi Sıfırla</a>
-          </p>
-          <p>Veya bu URL'yi tarayıcınızda açın:</p>
-          <p>${resetUrl}</p>
-          <p>Bu bağlantı 1 saat süreyle geçerlidir.</p>
-          <p>Eğer bir şifre sıfırlama talebinde bulunmadıysanız, bu e-postayı dikkate almayın.</p>
+          <p>Hesabınız için şifre sıfırlama talebinde bulundunuz. Şifre sıfırlama işleminizi tamamlamak için aşağıdaki kodu kullanın:</p>
+          <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; text-align: center;">
+            <h3 style="font-size: 24px; letter-spacing: 5px; margin: 0;">${resetCode}</h3>
+          </div>
+          <p>Bu kod 15 dakika süreyle geçerlidir.</p>
+          <p>Eğer bu talebi siz gerçekleştirmediyseniz, lütfen hesabınızın güvenliğini kontrol edin ve bu e-postayı dikkate almayın.</p>
           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
           <p style="font-size: 12px; color: #777;">Bu otomatik bir e-postadır, lütfen cevaplamayın.</p>
         </div>
       `
     };
     
-    console.log('Şifre sıfırlama e-postası hazırlanıyor...');
-    console.log('Alıcı:', email);
-    
     // E-postayı gönder
     const emailResult = await sendEmail(mailOptions);
     
-    if (emailResult.success) {
-      console.log('Şifre sıfırlama e-postası gönderildi!');
+    if (!emailResult.success) {
+      console.error(`Şifre sıfırlama e-postası gönderimi başarısız: ${emailResult.error}`);
       return emailResult;
-    } else {
-      throw new Error(emailResult.error || 'E-posta gönderim hatası');
     }
+    
+    console.log(`Şifre sıfırlama e-postası başarıyla gönderildi: ${email}`);
+    return {
+      ...emailResult,
+      resetCode: process.env.NODE_ENV === 'development' ? resetCode : undefined
+    };
   } catch (error) {
     console.error('❌ Şifre sıfırlama e-postası gönderim hatası:', error);
     return {
@@ -199,9 +246,17 @@ const sendPasswordResetEmail = async (email, resetToken, name) => {
  */
 const sendVerificationEmail = async (email, verificationToken, name) => {
   try {
-    // Web yada mobil uygulama için uygun URL
-    const clientUrl = process.env.CLIENT_URL_WEB || 'http://localhost:3000';
-    const verificationUrl = `${clientUrl}/verify-email/${verificationToken}`;
+    // API URL - Geliştirme ortamı kontrolü yaparak URL'yi ayarlıyoruz
+    const apiUrl = process.env.API_URL || 'http://localhost:5000';
+    
+    // Doğrudan API URL'si (token parametresi ile)
+    const apiVerificationUrl = `${apiUrl}/api/users/verify-email/${verificationToken}`;
+    
+    // Mobil deep link
+    const mobileDeepLink = `sosyaletkinlik://verify-email/${verificationToken}`;
+    
+    console.log('Oluşturulan doğrulama URL:', apiVerificationUrl);
+    console.log('Mobil deep link:', mobileDeepLink);
     
     // E-posta içeriği
     const mailOptions = {
@@ -212,12 +267,23 @@ const sendVerificationEmail = async (email, verificationToken, name) => {
           <h2 style="color: #333;">E-posta Doğrulama</h2>
           <p>Merhaba ${name || 'Değerli Kullanıcımız'},</p>
           <p>Sosyal Etkinlik platformuna hoş geldiniz! Hesabınızı aktifleştirmek için lütfen aşağıdaki bağlantıya tıklayarak e-posta adresinizi doğrulayın:</p>
-          <p style="margin: 20px 0;">
-            <a href="${verificationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px;">E-posta Adresimi Doğrula</a>
-          </p>
-          <p>Veya bu URL'yi tarayıcınızda açın:</p>
-          <p>${verificationUrl}</p>
-          <p>Bu bağlantı 24 saat süreyle geçerlidir.</p>
+          
+          <div style="margin: 25px 0; text-align: center;">
+            <a href="${apiVerificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px;">E-POSTA ADRESİMİ DOĞRULA</a>
+          </div>
+          
+          <p><strong>ÖNEMLİ:</strong> Link çalışmazsa, aşağıdaki URL'yi tarayıcınıza kopyalayıp yapıştırın:</p>
+          <p style="background: #f5f5f5; padding: 10px; border-radius: 4px; word-break: break-all;">${apiVerificationUrl}</p>
+          
+          <div style="margin: 25px 0; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #1976d2;">
+            <h4 style="margin-top: 0; color: #333;">Mobil Uygulama Kullanıcıları İçin</h4>
+            <p>Mobil uygulama kullanıyorsanız, aşağıdaki butonu kullanın. Bu buton uygulamayı otomatik olarak açacaktır:</p>
+            <div style="text-align: center; margin: 15px 0;">
+              <a href="${mobileDeepLink}" style="display: inline-block; padding: 12px 24px; background-color: #1976d2; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px;">MOBİL UYGULAMADA DOĞRULA</a>
+            </div>
+          </div>
+          
+          <p>Bu bağlantı <strong>24 saat</strong> süreyle geçerlidir.</p>
           <p>Eğer bu hesabı siz oluşturmadıysanız, bu e-postayı dikkate almayın.</p>
           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
           <p style="font-size: 12px; color: #777;">Bu otomatik bir e-postadır, lütfen cevaplamayın.</p>
@@ -233,6 +299,16 @@ const sendVerificationEmail = async (email, verificationToken, name) => {
     
     if (emailResult.success) {
       console.log('E-posta doğrulama bağlantısı gönderildi!');
+      
+      // Ethereal test email ise preview URL'yi döndür
+      if (emailResult.previewUrl) {
+        return {
+          success: true,
+          messageId: emailResult.messageId,
+          previewUrl: emailResult.previewUrl
+        };
+      }
+      
       return emailResult;
     } else {
       throw new Error(emailResult.error || 'E-posta gönderim hatası');
@@ -281,5 +357,6 @@ module.exports = {
   sendEmail,
   sendPasswordResetEmail,
   sendVerificationEmail,
-  isValidEmail
+  isValidEmail,
+  verifyResetCode
 }; 

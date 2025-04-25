@@ -22,8 +22,11 @@ const registerUser = async (req, res) => {
   const { username, email, password, fullName } = req.body;
 
   try {
+    console.log(`Yeni kullanıcı kaydı işleniyor: ${email}`);
+    
     // E-posta geçerlilik kontrolü
     if (!isValidEmail(email)) {
+      console.log(`Geçersiz email formatı: ${email}`);
       return res.status(400).json({
         success: false,
         message: 'Geçersiz e-posta adresi. Lütfen geçerli bir e-posta adresi girin.'
@@ -36,6 +39,7 @@ const registerUser = async (req, res) => {
     });
 
     if (userExists) {
+      console.log(`Kullanıcı zaten var: ${email} veya ${username}`);
       return res.status(400).json({ 
         success: false,
         message: 'Kullanıcı zaten var - bu email veya kullanıcı adı kullanılıyor' 
@@ -52,6 +56,7 @@ const registerUser = async (req, res) => {
       .digest('hex');
 
     // Yeni kullanıcı oluştur
+    console.log(`Yeni kullanıcı oluşturuluyor: ${username}, ${email}`);
     const user = new User({
       username,
       email,
@@ -63,24 +68,43 @@ const registerUser = async (req, res) => {
       verificationTokenExpire: Date.now() + 24 * 60 * 60 * 1000 // 24 saat
     });
 
-    await user.save();
+    try {
+      await user.save();
+      console.log(`Kullanıcı veritabanına kaydedildi: ${user._id}`);
+    } catch (mongoError) {
+      console.error('MongoDB kayıt hatası:', mongoError);
+      return res.status(500).json({ 
+        success: false,
+        message: 'Kullanıcı kaydedilirken bir hata oluştu',
+        error: process.env.NODE_ENV === 'development' ? mongoError.message : undefined
+      });
+    }
 
     // Doğrulama e-postası gönder
-    const emailResult = await sendVerificationEmail(
-      user.email,
-      verificationToken,
-      user.fullName
-    );
-
-    if (!emailResult.success) {
-      console.error('E-posta doğrulama gönderilemedi:', emailResult.error);
-      // E-posta gönderilemese bile kullanıcıyı oluşturduk, sadece log alalım
+    let emailResult;
+    try {
+      console.log(`Doğrulama e-postası gönderiliyor: ${user.email}`);
+      emailResult = await sendVerificationEmail(
+        user.email,
+        verificationToken,
+        user.fullName
+      );
+      console.log('Email gönderim sonucu:', emailResult);
+    } catch (emailError) {
+      console.error('E-posta gönderim hatası:', emailError);
+      // E-posta hatası olsa bile devam et
+      emailResult = { 
+        success: false, 
+        error: emailError.message || 'E-posta gönderilemedi'
+      };
     }
 
     // E-posta doğrulama talimatlarıyla cevap ver
     const responseData = {
       success: true,
-      message: 'Kayıt başarılı! E-posta adresinize gönderilen doğrulama bağlantısına tıklayarak hesabınızı aktifleştirin.',
+      message: emailResult.success
+        ? 'Kayıt başarılı! E-posta adresinize gönderilen doğrulama bağlantısına tıklayarak hesabınızı aktifleştirin.'
+        : 'Kayıt başarılı, fakat doğrulama e-postası gönderilirken bir hata oluştu. Lütfen daha sonra yeniden doğrulama bağlantısı isteyin.',
       data: {
         _id: user._id,
         username: user.username,
@@ -88,18 +112,36 @@ const registerUser = async (req, res) => {
         fullName: user.fullName,
         profilePicture: user.profilePicture,
         emailVerified: user.emailVerified
-      }
+      },
+      emailSent: emailResult.success,
+      platform: req.headers['user-agent'] && req.headers['user-agent'].includes('Expo') ? 'mobile' : 'web'
     };
 
-    // Geliştirme ortamında ise test mail URL'sini de ekle
-    if ((process.env.NODE_ENV === 'development' || process.env.ETHEREAL_EMAIL === 'true') && emailResult.previewUrl) {
+    // Tüm durumlarda geliştirici bilgisini ekle - mobil için önemli
+    const developerInfo = {
+      note: 'Doğrulama bağlantısı bilgisi',
+      verificationToken: process.env.NODE_ENV === 'development' ? verificationToken : undefined,
+      emailSendingType: process.env.ETHEREAL_EMAIL === 'true' ? 'test' : 'real'
+    };
+
+    // Eğer test e-posta URL'si varsa, onu da ekle
+    if (emailResult.previewUrl) {
       console.log('Test doğrulama e-postası URL\'si:', emailResult.previewUrl);
-      responseData.developerInfo = {
-        note: 'Bu bilgi sadece geliştirme ortamında görünür.',
-        verificationToken: verificationToken,
-        emailPreviewUrl: emailResult.previewUrl
-      };
+      developerInfo.emailPreviewUrl = emailResult.previewUrl;
+      responseData.emailPreviewUrl = emailResult.previewUrl; // Hem developerInfo'da hem ana objede
     }
+
+    // Geliştirici bilgilerini ekle
+    responseData.developerInfo = developerInfo;
+
+    // Yanıt ekranında görüntülenecek ek bilgiler
+    responseData.uiMessage = {
+      title: emailResult.success ? 'Kayıt Başarılı!' : 'Kayıt Tamamlandı',
+      body: emailResult.success
+        ? `${user.email} adresine bir doğrulama bağlantısı gönderdik. Lütfen e-posta kutunuzu kontrol edin ve bağlantıya tıklayarak hesabınızı doğrulayın.`
+        : 'Hesabınız oluşturuldu ancak doğrulama e-postası gönderilemedi. Giriş yaptıktan sonra yeni bir doğrulama e-postası isteyebilirsiniz.',
+      type: emailResult.success ? 'success' : 'warning'
+    };
 
     res.status(201).json(responseData);
   } catch (error) {
@@ -142,6 +184,34 @@ const loginUser = async (req, res) => {
 
     // E-posta doğrulanmış mı kontrol et
     if (!user.emailVerified) {
+      // Kullanıcıya yeni doğrulama e-postası gönderip göndermeme kontrolü
+      // Son doğrulama isteği üzerinden 24 saat geçtiyse yeni doğrulama göndereceğiz
+      const lastTokenTime = user.verificationTokenExpire ? new Date(user.verificationTokenExpire) : null;
+      const shouldResendVerification = !lastTokenTime || (new Date() - lastTokenTime > 24 * 60 * 60 * 1000);
+      
+      if (shouldResendVerification) {
+        // Yeni doğrulama tokeni oluştur
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+        
+        // Kullanıcı bilgilerini güncelle
+        user.verificationToken = hashedToken;
+        user.verificationTokenExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 saat
+        await user.save();
+        
+        // Doğrulama e-postası gönder
+        await sendVerificationEmail(
+          user.email,
+          verificationToken,
+          user.fullName
+        );
+        
+        return res.status(401).json({ 
+          success: false,
+          message: 'Lütfen önce e-posta adresinizi doğrulayın. Yeni doğrulama bağlantısı e-posta adresinize gönderildi.' 
+        });
+      }
+      
       return res.status(401).json({ 
         success: false,
         message: 'Lütfen önce e-posta adresinizi doğrulayın. Doğrulama bağlantısı e-posta adresinize gönderildi.' 
@@ -815,12 +885,25 @@ const getUserByUsername = async (req, res) => {
  * @access  Public
  */
 const verifyEmail = async (req, res) => {
+  console.log('E-posta doğrulama isteği alındı. Token:', req.params.token);
+  
   try {
+    // Token kontrolü
+    if (!req.params.token) {
+      console.error('Doğrulama hatası: Token parametre olarak sağlanmadı.');
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz doğrulama bağlantısı. Token bulunamadı.'
+      });
+    }
+    
     // Token'ı hashle
     const verificationToken = crypto
       .createHash('sha256')
       .update(req.params.token)
       .digest('hex');
+    
+    console.log('Hash\'lenen token:', verificationToken);
 
     // Token'a sahip ve süresi dolmamış kullanıcıyı bul
     const user = await User.findOne({
@@ -829,11 +912,45 @@ const verifyEmail = async (req, res) => {
     });
 
     if (!user) {
+      console.error('Doğrulama hatası: Verilen token için kullanıcı bulunamadı veya süresi dolmuş.');
+      
+      // Genel Token kontrolü - sadece token var mı, süresi geçmiş mi
+      const expiredUser = await User.findOne({
+        verificationToken
+      });
+      
+      if (expiredUser) {
+        console.log('Süresi dolmuş token bulundu. Kullanıcı:', expiredUser.email);
+        
+        // Yeni doğrulama tokeni oluştur
+        const newVerificationToken = crypto.randomBytes(32).toString('hex');
+        const newHashedToken = crypto.createHash('sha256').update(newVerificationToken).digest('hex');
+        
+        // Kullanıcı bilgilerini güncelle
+        expiredUser.verificationToken = newHashedToken;
+        expiredUser.verificationTokenExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 saat
+        await expiredUser.save();
+        
+        // Yeni doğrulama e-postası gönder
+        await sendVerificationEmail(
+          expiredUser.email,
+          newVerificationToken,
+          expiredUser.fullName
+        );
+        
+        return res.status(400).json({
+          success: false,
+          message: 'Doğrulama linkinin süresi dolmuş. Yeni bir doğrulama e-postası adresinize gönderildi.'
+        });
+      }
+      
       return res.status(400).json({
         success: false,
         message: 'Geçersiz veya süresi dolmuş doğrulama bağlantısı. Lütfen tekrar kayıt olun veya yeni doğrulama bağlantısı isteyin.'
       });
     }
+
+    console.log('Kullanıcı bulundu, doğrulama yapılıyor:', user.email);
 
     // Kullanıcıyı doğrulanmış olarak işaretle
     user.emailVerified = true;
@@ -841,18 +958,71 @@ const verifyEmail = async (req, res) => {
     user.verificationTokenExpire = undefined;
     
     await user.save();
+    console.log('Kullanıcı doğrulandı ve kaydedildi');
 
     // JWT token'ları oluştur (otomatik giriş için)
     const accessToken = generateToken({ id: user._id });
     const refreshToken = generateRefreshToken(user._id);
 
-    // Web uygulamasına yönlendirme parametreleriyle
-    const clientUrl = process.env.CLIENT_URL_WEB || 'http://localhost:3000';
-    res.redirect(`${clientUrl}/email-verified?success=true&token=${accessToken}&refreshToken=${refreshToken}`);
+    // İstek doğrudan API'den mi geldi kontrol edelim 
+    // Content-Type veya Accept header'ına göre JSON yanıt isteğini belirleyelim
+    const acceptJson = req.headers.accept && req.headers.accept.includes('application/json');
+    const isApiRequest = acceptJson || req.xhr;
+    
+    console.log('İstek tipi kontrolü:', { acceptJson, isApiRequest, accept: req.headers.accept });
+    
+    // API isteği ise JSON yanıt döndür
+    if (isApiRequest) {
+      console.log('API isteği tespit edildi, JSON yanıtı döndürülüyor');
+      return res.status(200).json({
+        success: true,
+        message: 'E-posta adresiniz başarıyla doğrulandı.',
+        token: accessToken,
+        refreshToken: refreshToken
+      });
+    }
+    
+    // Web veya mobil uygulama belirle
+    const userAgent = req.headers['user-agent'];
+    const isMobile = userAgent && (userAgent.includes('Mobile') || userAgent.includes('Expo'));
+    
+    console.log('User-Agent kontrolü:', { isMobile, userAgent });
+    
+    if (isMobile) {
+      // Mobil uygulama için deep link ile dönüş
+      const mobileRedirectUrl = `sosyaletkinlik://email-verified?success=true&token=${accessToken}&refreshToken=${refreshToken}`;
+      console.log('Mobil yönlendirme:', mobileRedirectUrl);
+      return res.redirect(mobileRedirectUrl);
+    } else {
+      // Web uygulamasına yönlendirme parametreleriyle
+      const clientUrl = process.env.CLIENT_URL_WEB || 'http://localhost:3000';
+      const redirectUrl = `${clientUrl}/email-verified?success=true&token=${accessToken}&refreshToken=${refreshToken}`;
+      console.log('Web yönlendirme:', redirectUrl);
+      return res.redirect(redirectUrl);
+    }
   } catch (error) {
     console.error('E-posta doğrulama hatası:', error);
+    
+    // Hata tipi ve içeriğini logla
+    console.error('Hata detayları:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    
+    // JSON isteği mi kontrol et
+    const acceptJson = req.headers.accept && req.headers.accept.includes('application/json');
+    if (acceptJson || req.xhr) {
+      return res.status(500).json({
+        success: false,
+        message: 'Doğrulama işlemi sırasında bir hata oluştu.',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
+    // Web için hata yönlendirmesi
     const clientUrl = process.env.CLIENT_URL_WEB || 'http://localhost:3000';
-    res.redirect(`${clientUrl}/email-verified?success=false&error=${encodeURIComponent('Doğrulama işlemi sırasında bir hata oluştu.')}`);
+    return res.redirect(`${clientUrl}/email-verified?success=false&error=${encodeURIComponent('Doğrulama işlemi sırasında bir hata oluştu.')}`);
   }
 };
 
@@ -921,17 +1091,25 @@ const resendVerificationEmail = async (req, res) => {
 
     const responseData = {
       success: true,
-      message: 'Doğrulama e-postası gönderildi. Lütfen e-posta kutunuzu kontrol edin.'
+      message: 'Doğrulama e-postası gönderildi. Lütfen e-posta kutunuzu kontrol edin.',
+      platform: req.headers['user-agent'] && req.headers['user-agent'].includes('Expo') ? 'mobile' : 'web'
     };
 
-    // Geliştirme ortamında ise test mail URL'sini de ekle
-    if ((process.env.NODE_ENV === 'development' || process.env.ETHEREAL_EMAIL === 'true') && emailResult.previewUrl) {
-      responseData.developerInfo = {
-        note: 'Bu bilgi sadece geliştirme ortamında görünür.',
-        verificationToken: verificationToken,
-        emailPreviewUrl: emailResult.previewUrl
-      };
+    // Tüm durumlarda geliştirici bilgisini ekle - mobil için önemli
+    const developerInfo = {
+      note: 'Doğrulama bağlantısı bilgisi',
+      verificationToken: process.env.NODE_ENV === 'development' ? verificationToken : undefined
+    };
+
+    // Eğer test e-posta URL'si varsa, onu da ekle
+    if (emailResult.previewUrl) {
+      console.log('Test doğrulama e-postası URL\'si:', emailResult.previewUrl);
+      developerInfo.emailPreviewUrl = emailResult.previewUrl;
+      responseData.emailPreviewUrl = emailResult.previewUrl; // Hem developerInfo'da hem ana objede
     }
+
+    // Geliştirici bilgilerini ekle
+    responseData.developerInfo = developerInfo;
 
     return res.status(200).json(responseData);
   } catch (error) {

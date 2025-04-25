@@ -1,5 +1,8 @@
-const express = require('express');
+// Önce çevre değişkenlerini yükle
 const dotenv = require('dotenv');
+dotenv.config();
+
+const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const socketio = require('socket.io');
@@ -12,9 +15,6 @@ const fs = require('fs');
 const userRoutes = require('./routes/userRoutes');
 const hobbyRoutes = require('./routes/hobbyRoutes');
 const eventRoutes = require('./routes/eventRoutes');
-
-// Load env variables
-dotenv.config();
 
 const app = express();
 

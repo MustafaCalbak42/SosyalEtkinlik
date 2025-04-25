@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Sosyal Etkinlik",
+    "slug": "sosyal-etkinlik",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sosyaletkinlik.app"
+    },
+    "android": {
+      "backgroundColor": "#1976d2",
+      "package": "com.sosyaletkinlik.app"
+    },
+    "web": {},
+    "scheme": "sosyaletkinlik",
+    "extra": {
+      "eas": {
+        "projectId": "sosyal-etkinlik"
+      }
+    },
+    "owner": "sosyaletkinlik",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "plugins": [
+      "expo-dev-client"
+    ]
+  }
+} 

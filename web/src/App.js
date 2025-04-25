@@ -10,6 +10,7 @@ import { AuthProvider } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import VerifyResetCodePage from './pages/VerifyResetCodePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import EmailVerifiedPage from './pages/EmailVerifiedPage';
 import ProfilePage from './pages/ProfilePage';
@@ -79,7 +80,12 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            
+            {/* Şifre sıfırlama akışı */}
+            <Route path="/verify-reset-code" element={<VerifyResetCodePage />} />
+            <Route path="/reset-password/new" element={<ResetPasswordPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+            
             <Route path="/verify-email/:token" element={<Navigate to="/api/users/verify-email/:token" />} />
             <Route path="/email-verified" element={<EmailVerifiedPage />} />
             
