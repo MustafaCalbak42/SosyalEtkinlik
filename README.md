@@ -1,6 +1,14 @@
 # Sosyal Etkinlik Platformu
 
-Bu proje, ilgi alanlarına göre kullanıcıları eşleştiren ve sosyal etkinlikler düzenlemelerini sağlayan bir web ve mobil tabanlı sosyal platformdur.
+Bu proje, ortak ilgi alanları olan insanları bir araya getiren sosyal etkinlik platformudur.
+
+## Yeni Özellik: E-posta Doğrulama ve Şifre Sıfırlama
+
+Uygulama artık SMTP ile gerçek e-posta doğrulama sistemi kullanmaktadır:
+
+- Kullanıcılar kaydolurken e-posta adreslerine doğrulama kodu gönderilir
+- E-posta doğrulandıktan sonra kullanıcı bilgileri MongoDB veritabanına kaydedilir
+- Şifre sıfırlama işlemi de e-posta üzerinden gönderilen kodla yapılır
 
 ## Özellikler
 
@@ -38,53 +46,142 @@ Bu proje, ilgi alanlarına göre kullanıcıları eşleştiren ve sosyal etkinli
 
 ## Kurulum
 
-### Gereksinimler
-- Node.js
-- npm veya yarn
-- MongoDB veritabanı
+Projeyi çalıştırmak için aşağıdaki adımları izleyin:
 
-### Backend Kurulumu
-```bash
+### 1. Gereksinimleri Yükleme
+
+```
 cd backend
 npm install
+```
+
+### 2. Çevre Değişkenleri Ayarlama
+
+backend dizininde `.env` dosyası oluşturun:
+
+```
+# Server Configuration
+PORT=5000
+NODE_ENV=development
+
+# MongoDB Connection
+MONGODB_URI=mongodb+srv://kullanici:sifre@cluster.mongodb.net/veritabani?retryWrites=true&w=majority
+
+# JWT Secret
+JWT_SECRET=your-jwt-secret
+JWT_EXPIRE=30d
+JWT_REFRESH_SECRET=your-refresh-token-secret
+JWT_REFRESH_EXPIRE=7d
+
+# Email Configuration for Gmail
+EMAIL_USERNAME=your-email@gmail.com
+EMAIL_PASSWORD=your-app-password-here
+
+# Client URLs
+CLIENT_URL_WEB=http://localhost:3000
+CLIENT_URL_MOBILE=exp://localhost:19000
+```
+
+### 3. Gmail Hesabı Ayarlama
+
+1. Gmail hesabınızda "Uygulama Şifreleri" oluşturun:
+   - Google Hesabınıza gidin
+   - Güvenlik > 2 Adımlı Doğrulama > Uygulama Şifreleri
+   - "Uygulama Seçin" > Diğer (Özel ad) > "Sosyal Etkinlik" yazın
+   - Oluştur düğmesine tıklayın ve verilen 16 haneli şifreyi kopyalayın
+   - Bu şifreyi .env dosyasındaki EMAIL_PASSWORD alanına yapıştırın
+
+### 4. Uygulamayı Çalıştırma
+
+```
 npm run dev
 ```
 
-### Web Kurulumu
-```bash
-cd web
-npm install
-npm start
-```
+## API Kullanımı
 
-### Mobil Kurulumu
-```bash
-cd mobile
-npm install
-npx react-native start
-```
-
-iOS için:
-```bash
-npx react-native run-ios
-```
-
-Android için:
-```bash
-npx react-native run-android
-```
-
-## Çalışma Ortamı Değişkenleri
-
-Backend klasöründe `.env` dosyası oluşturun ve aşağıdaki değişkenleri ayarlayın:
+### Kullanıcı Kaydı
 
 ```
-MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/sosyaletkinlik?retryWrites=true&w=majority
-PORT=5000
-JWT_SECRET=sosyaletkinlik_gizli_anahtar123
-NODE_ENV=development
-CLIENT_URL_WEB=http://localhost:3000
-CLIENT_URL_MOBILE=exp://localhost:19000
+POST /api/users/register
+```
+
+Gövde:
+```json
+{
+  "username": "kullanici123",
+  "email": "ornek@gmail.com",
+  "password": "sifre123",
+  "fullName": "Ad Soyad"
+}
+```
+
+### E-posta Doğrulama
+
+```
+POST /api/users/verify-email
+```
+
+Gövde:
+```json
+{
+  "email": "ornek@gmail.com",
+  "code": "123456"
+}
+```
+
+### Giriş İşlemi
+
+```
+POST /api/users/login
+```
+
+Gövde:
+```json
+{
+  "email": "ornek@gmail.com",
+  "password": "sifre123"
+}
+```
+
+### Şifre Sıfırlama
+
+1. Şifre sıfırlama kodu isteme:
+```
+POST /api/users/forgot-password
+```
+
+Gövde:
+```json
+{
+  "email": "ornek@gmail.com"
+}
+```
+
+2. Şifre sıfırlama kodu doğrulama:
+```
+POST /api/users/verify-reset-code
+```
+
+Gövde:
+```json
+{
+  "email": "ornek@gmail.com",
+  "code": "123456"
+}
+```
+
+3. Şifre sıfırlama işlemini tamamlama:
+```
+POST /api/users/reset-password
+```
+
+Gövde:
+```json
+{
+  "email": "ornek@gmail.com",
+  "code": "123456",
+  "password": "yeni-sifre123"
+}
 ```
 
 ## Proje Yapısı

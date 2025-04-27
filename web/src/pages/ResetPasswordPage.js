@@ -38,7 +38,7 @@ const ResetPasswordPage = () => {
   const verificationId = location.state?.verificationId || '';
   
   // Redirect if not coming from verification page
-  if (!verified || !email || !verificationId) {
+  if (!verified || !email) {
     navigate('/forgot-password');
     return null;
   }
@@ -52,17 +52,15 @@ const ResetPasswordPage = () => {
     setError('');
     
     try {
-      // Yeni şifre sıfırlama API'si
       const response = await resetPassword({
         email,
         verificationId,
-        newPassword: data.password
+        password: data.password
       });
       
       if (response.success) {
         setSuccess(true);
         
-        // 2 saniye sonra giriş sayfasına yönlendir
         setTimeout(() => {
           navigate('/login', { 
             state: { 

@@ -19,16 +19,16 @@ import KeyIcon from '@mui/icons-material/Key';
 import EmailIcon from '@mui/icons-material/Email';
 
 const VerifyResetCodePage = () => {
-  const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  
   const navigate = useNavigate();
   const location = useLocation();
   
   // Get email from location state
   const email = location.state?.email || '';
+  
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   
   if (!email) {
     // If no email, redirect to forgot password
@@ -63,7 +63,7 @@ const VerifyResetCodePage = () => {
               verificationId: response.data.verificationId
             } 
           });
-        }, 1000); // Daha hızlı yönlendirme
+        }, 1000);
       } else {
         setError(response.data.message || 'Kod doğrulaması başarısız oldu');
       }

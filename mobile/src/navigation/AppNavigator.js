@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { ActivityIndicator, View, StatusBar, Alert } from 'react-native';
+import { ActivityIndicator, View, StatusBar, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Linking from 'expo-linking';
-import api from '../shared/api/apiClient';
+import * as ExpoLinking from 'expo-linking';
 
 // Navigatörler
 import AuthNavigator from './AuthNavigator';
@@ -13,128 +12,149 @@ const AppNavigator = ({ linking }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
 
-  // Deep link işleme
-  const handleDeepLink = async (url) => {
-    if (!url) return;
-    
-    console.log('Deep link işleniyor:', url);
-    
-    // E-posta doğrulama URL'si
-    if (url.includes('verify-email')) {
-      setIsLoading(true);
-      
-      try {
-        // URL'den token'ı çıkar
-        const token = url.split('/').pop(); // Son parçayı al
-        
-        // API'ye doğrulama isteği gönder
-        const response = await api.auth.verifyEmail(token);
-        
-        if (response.data && response.data.success) {
-          // Başarılı ise token'ları sakla
-          if (response.data.token) {
-            await AsyncStorage.setItem('token', response.data.token);
-            setUserToken(response.data.token);
+  // Deep link yapılandırması
+  const linkingConfig = {
+    prefixes: [
+      'sosyaletkinlik://', 
+      'exp://sosyaletkinlik', 
+      'exp://', 
+      'http://localhost',
+      'https://localhost'
+    ],
+    config: {
+      screens: {
+        AuthNavigator: {
+          screens: {
+            Login: 'login',
+            Register: 'register',
+            EmailVerified: {
+              path: 'email-verified',
+              parse: {
+                success: (success) => success === 'true', // string -> boolean
+                token: (token) => token,
+                refreshToken: (refreshToken) => refreshToken,
+                error: (error) => error,
+                email: (email) => email,
+                message: (message) => message
+              }
+            }
           }
-          
-          Alert.alert(
-            'Başarılı',
-            'E-posta adresiniz başarıyla doğrulandı. Artık giriş yapabilirsiniz.',
-            [{ text: 'Tamam' }]
-          );
-        } else {
-          Alert.alert(
-            'Hata',
-            response.data?.message || 'E-posta doğrulama işlemi başarısız oldu.',
-            [{ text: 'Tamam' }]
-          );
+        },
+        MainNavigator: {
+          screens: {
+            Home: 'home',
+            Profile: 'profile',
+          }
         }
-      } catch (error) {
-        console.error('E-posta doğrulama hatası:', error);
-        Alert.alert(
-          'Doğrulama Hatası',
-          'E-posta adresinizi doğrularken bir hata oluştu. Lütfen tekrar deneyin.',
-          [{ text: 'Tamam' }]
-        );
-      } finally {
-        setIsLoading(false);
       }
-    }
-    // E-posta doğrulandı URL'si (eski yöntem)
-    else if (url.includes('email-verified')) {
-      setIsLoading(true);
+    },
+    // Deep link'i yakalamak için
+    async getInitialURL() {
       try {
-        // URL'den parametreleri çıkar
-        const params = url.split('?')[1];
-        const urlParams = new URLSearchParams(params);
-        const success = urlParams.get('success');
-        const token = urlParams.get('token');
-        const refreshToken = urlParams.get('refreshToken');
+        // Uygulama kapalıyken açıldıysa
+        const url = await ExpoLinking.getInitialURL();
+        console.log('Initial URL:', url);
         
-        if (success === 'true' && token && refreshToken) {
-          // Tokenleri saklama
-          await AsyncStorage.setItem('token', token);
-          await AsyncStorage.setItem('refreshToken', refreshToken);
-          
-          setUserToken(token);
-          Alert.alert(
-            'Başarılı',
-            'E-posta adresiniz başarıyla doğrulandı.',
-            [{ text: 'Tamam' }]
-          );
-        } else {
-          Alert.alert(
-            'Hata',
-            'E-posta doğrulama işlemi başarısız oldu.',
-            [{ text: 'Tamam' }]
-          );
-        }
-      } catch (error) {
-        console.error('Deep link işleme hatası:', error);
-      } finally {
-        setIsLoading(false);
+        // Doğrudan URL açma olaylarını da yakalayalım (app-to-app linking)
+        const initialUrl = await Linking.getInitialURL();
+        console.log('Initial URL from Linking API:', initialUrl);
+        
+        return url || initialUrl;
+      } catch (e) {
+        console.error('Deep link getInitialURL hatası:', e);
+        return null;
       }
+    },
+    // URL olaylarını dinlemek için abonelik ayarı
+    subscribe(listener) {
+      // Hem Expo hem de React Native Linking kullanmayı deneyelim
+      
+      // Expo Linking
+      const expoSubscription = ExpoLinking.addEventListener('url', ({ url }) => {
+        console.log('Expo received URL:', url);
+        listener(url);
+      });
+      
+      // React Native Linking
+      const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
+        console.log('RN received URL:', url);
+        listener(url);
+      });
+
+      return () => {
+        // Abonelikten çıkma
+        expoSubscription.remove();
+        linkingSubscription.remove();
+      };
     }
   };
 
   useEffect(() => {
-    // Uygulama başladığında token kontrolü yap
+    // Uygulama başladığında token kontrolü
     const bootstrapAsync = async () => {
-      let token = null;
-      
-      try {
-        // AsyncStorage'dan token'ı al
-        token = await AsyncStorage.getItem('token');
-      } catch (e) {
-        console.log('Token yüklenirken hata oluştu:', e);
-      }
-      
-      // Token durumunu ayarla
-      setUserToken(token);
+      // Token kontrolünü devre dışı bırakıyoruz, her zaman login ekranı gösterilecek
+      setUserToken(null);
       setIsLoading(false);
     };
 
     bootstrapAsync();
-
-    // Uygulama açıkken deep linkleri dinle
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      handleDeepLink(url);
+    
+    // URL'den gelen parametreleri dinleyelim
+    const handleDeepLink = ({ url }) => {
+      console.log('Deep Link URL event:', url);
+      
+      // URL parametrelerini kontrol et
+      if (url && url.includes('email-verified')) {
+        console.log('Email verification deep link detected');
+        // URL parametrelerini alıp işleyeceğiz
+      }
+    };
+    
+    // Deep link dinleyicisi ekle
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // İlk açılışta URL kontrolü
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        console.log('Initial URL on mount:', url);
+        handleDeepLink({ url });
+      }
     });
-
-    // Uygulama kapalıyken kullanılan deep link ile açıldı mı kontrol et
-    Linking.getInitialURL()
-      .then(url => {
-        if (url) {
-          handleDeepLink(url);
-        }
-      })
-      .catch(err => console.error('Deep link başlatma hatası:', err));
-
-    // Cleanup
+    
     return () => {
       subscription.remove();
     };
   }, []);
+
+  // Oturum durumunu değiştirmek için fonksiyonlar
+  const authContext = React.useMemo(
+    () => ({
+      signIn: async (token, refreshToken) => {
+        try {
+          // Token'ı AsyncStorage'a kaydet
+          await AsyncStorage.setItem('token', token);
+          if (refreshToken) {
+            await AsyncStorage.setItem('refreshToken', refreshToken);
+          }
+          // Kullanıcı state'ini güncelle
+          setUserToken(token);
+        } catch (e) {
+          console.error('Token kaydedilirken hata:', e);
+        }
+      },
+      signOut: async () => {
+        try {
+          await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('refreshToken');
+          await AsyncStorage.removeItem('user');
+          setUserToken(null);
+        } catch (e) {
+          console.error('Çıkış yapılırken hata:', e);
+        }
+      }
+    }),
+    []
+  );
 
   if (isLoading) {
     return (
@@ -145,7 +165,7 @@ const AppNavigator = ({ linking }) => {
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer linking={linkingConfig}>
       <StatusBar backgroundColor="#1976d2" barStyle="light-content" />
       {userToken ? <MainNavigator /> : <AuthNavigator />}
     </NavigationContainer>

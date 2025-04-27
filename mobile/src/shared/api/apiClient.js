@@ -6,17 +6,8 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API temel URL (web ve mobil için ortak)
-let BASE_URL = 'http://10.0.2.2:5000/api'; // Android Emulator için localhost
-
-// Platform bazlı konfigürasyon
-if (process.env.REACT_APP_API_URL) {
-  // React web uygulaması için
-  BASE_URL = process.env.REACT_APP_API_URL;
-} else if (process.env.EXPO_PUBLIC_API_URL) {
-  // React Native (Expo) için
-  BASE_URL = process.env.EXPO_PUBLIC_API_URL;
-}
+// API temel URL - mobil ve backend aynı ağda olmalı
+const BASE_URL = 'http://192.168.1.36:5000/api'; // Gerçek IP adresi
 
 console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
 
@@ -26,6 +17,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // 10 saniye zaman aşımı
 });
 
 // İstek engelleme (interceptors)

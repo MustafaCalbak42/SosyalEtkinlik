@@ -4,8 +4,8 @@ const connectDB = async () => {
   try {
     console.log('MongoDB bağlantısı kuruluyor...');
     
-    // MONGODB_URI çevre değişkeni yoksa varsayılan olarak yerel MongoDB bağlantısı kullan
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/sosyaletkinlik';
+    // MongoDB URI'yi çevre değişkeninden al
+    const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://clbkmustafa123:427626Clbk.@sosyaletkinlikcluster.a42w5.mongodb.net/sosyaletkinlik?retryWrites=true&w=majority';
     
     console.log(`MongoDB URI: ${mongoURI.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:****@')}`);
     
@@ -26,8 +26,8 @@ const connectDB = async () => {
     console.log(`🔍 Hata: ${error.message}`);
     
     // Hassas bilgileri gizleyerek bağlantı bilgisini yazdır
-    const safeUri = process.env.MONGODB_URI 
-      ? process.env.MONGODB_URI.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:****@')
+    const safeUri = mongoURI
+      ? mongoURI.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:****@')
       : 'Tanımlanmamış';
     console.log(`🔗 Bağlantı: ${safeUri}`);
     
@@ -41,21 +41,6 @@ const connectDB = async () => {
       console.log('💡 Ağ hatası. Sunucuya erişilemiyor.');
     }
     console.log('------------------------------------------------');
-    
-    // Yerel MongoDB'ye bağlanmayı dene
-    if (process.env.MONGODB_URI && !process.env.MONGODB_URI.includes('localhost')) {
-      console.log('Yerel MongoDB\'ye bağlanmayı deneyeceğim...');
-      try {
-        const localConn = await mongoose.connect('mongodb://localhost:27017/sosyaletkinlik', {
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-        });
-        console.log('✅ Yerel MongoDB\'ye başarıyla bağlanıldı!');
-        return localConn;
-      } catch (localError) {
-        console.error('❌ Yerel MongoDB bağlantısı da başarısız:', localError.message);
-      }
-    }
     
     // Hatayı üst seviyeye iletiyoruz
     throw error;

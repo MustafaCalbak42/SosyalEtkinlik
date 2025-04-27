@@ -6,10 +6,17 @@ import {
   Paper, 
   Button,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  TextField
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CheckCircle as CheckCircleIcon, Error as ErrorIcon } from '@mui/icons-material';
+import { CheckCircle as CheckCircleIcon, Error as ErrorIcon, Email as EmailIcon } from '@mui/icons-material';
+import { resendVerificationEmail } from '../services/userService';
 
 // E-posta doğrulama sonuç sayfası
 const EmailVerifiedPage = () => {
@@ -18,6 +25,11 @@ const EmailVerifiedPage = () => {
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [resendDialogOpen, setResendDialogOpen] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+  const [resendError, setResendError] = useState('');
 
   // URL parametrelerini al
   useEffect(() => {
@@ -26,6 +38,11 @@ const EmailVerifiedPage = () => {
     const errorParam = searchParams.get('error');
     const token = searchParams.get('token');
     const refreshToken = searchParams.get('refreshToken');
+    const userEmail = searchParams.get('email');
+
+    if (userEmail) {
+      setEmail(decodeURIComponent(userEmail));
+    }
 
     // İşlem başarılı mı?
     if (successParam === 'true') {
@@ -41,6 +58,13 @@ const EmailVerifiedPage = () => {
       setSuccess(false);
       if (errorParam) {
         setError(decodeURIComponent(errorParam));
+        
+        // Eğer hata "token süresi dolmuş" ise otomatik olarak resend dialogunu aç
+        if (errorParam.includes('süresi dolmuş') && userEmail) {
+          setTimeout(() => {
+            setResendDialogOpen(true);
+          }, 1000);
+        }
       } else {
         setError('E-posta doğrulama işlemi sırasında bir hata oluştu.');
       }
@@ -57,6 +81,51 @@ const EmailVerifiedPage = () => {
   // Ana sayfaya yönlendir (oturum açıksa)
   const handleGoToHome = () => {
     navigate('/');
+  };
+
+  // E-posta doğrulama bağlantısını yeniden gönder
+  const handleResendVerification = () => {
+    setResendDialogOpen(true);
+  };
+
+  // Doğrulama e-postasını yeniden gönder
+  const handleResendSubmit = async () => {
+    if (!email) {
+      setResendError('Lütfen e-posta adresinizi girin');
+      return;
+    }
+
+    setResendLoading(true);
+    setResendError('');
+
+    try {
+      const response = await resendVerificationEmail({ email });
+      if (response.success) {
+        setResendSuccess(true);
+        setResendError('');
+      } else {
+        setResendError(response.message || 'E-posta gönderilemedi');
+      }
+    } catch (error) {
+      setResendError(error.message || 'E-posta gönderilemedi');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  // Dialog'u kapat
+  const handleCloseDialog = () => {
+    if (resendSuccess) {
+      setResendDialogOpen(false);
+      setResendSuccess(false);
+      navigate('/login', { 
+        state: { 
+          message: 'Doğrulama e-postası gönderildi. Lütfen e-posta kutunuzu kontrol edin.' 
+        } 
+      });
+    } else {
+      setResendDialogOpen(false);
+    }
   };
 
   if (loading) {
@@ -122,21 +191,79 @@ const EmailVerifiedPage = () => {
                 {error}
               </Alert>
               <Typography variant="body1" sx={{ mb: 3 }}>
-                Doğrulama bağlantısı geçersiz veya süresi dolmuş olabilir. Lütfen yeniden kayıt olun veya giriş sayfasından yeni doğrulama bağlantısı isteyin.
+                Doğrulama bağlantısı geçersiz veya süresi dolmuş olabilir. Yeni bir doğrulama bağlantısı istemek için aşağıdaki butona tıklayabilirsiniz.
               </Typography>
-              <Button
-                variant="contained"
-                color="primary"
-                size="large"
-                onClick={handleGoToLogin}
-                sx={{ mt: 2 }}
-              >
-                Giriş Sayfasına Git
-              </Button>
+              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  size="large"
+                  onClick={handleGoToLogin}
+                  fullWidth
+                >
+                  Giriş Sayfasına Git
+                </Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  onClick={handleResendVerification}
+                  startIcon={<EmailIcon />}
+                  fullWidth
+                >
+                  Doğrulama E-postasını Tekrar Gönder
+                </Button>
+              </Box>
             </>
           )}
         </Paper>
       </Box>
+
+      {/* Doğrulama E-postası Yeniden Gönderme Dialogu */}
+      <Dialog open={resendDialogOpen} onClose={handleCloseDialog}>
+        <DialogTitle>
+          Doğrulama E-postasını Yeniden Gönder
+        </DialogTitle>
+        <DialogContent>
+          {!resendSuccess ? (
+            <>
+              <DialogContentText>
+                Lütfen hesabınıza ait e-posta adresini girin. Yeni bir doğrulama bağlantısı göndereceğiz.
+              </DialogContentText>
+              <TextField
+                autoFocus
+                margin="dense"
+                label="E-posta Adresi"
+                type="email"
+                fullWidth
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                error={!!resendError}
+                helperText={resendError}
+              />
+            </>
+          ) : (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              Doğrulama e-postası {email} adresine başarıyla gönderildi. Lütfen e-posta kutunuzu kontrol edin.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog} color="primary">
+            {resendSuccess ? 'Tamam' : 'İptal'}
+          </Button>
+          {!resendSuccess && (
+            <Button 
+              onClick={handleResendSubmit}
+              color="primary"
+              variant="contained"
+              disabled={resendLoading}
+            >
+              {resendLoading ? <CircularProgress size={24} /> : 'Gönder'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

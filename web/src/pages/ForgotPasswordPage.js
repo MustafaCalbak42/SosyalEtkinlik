@@ -9,8 +9,14 @@ import {
   Typography, 
   Alert, 
   Link, 
-  CircularProgress 
+  CircularProgress,
+  Avatar,
+  InputAdornment
 } from '@mui/material';
+import { 
+  LockOutlined as LockIcon, 
+  EmailOutlined as EmailIcon 
+} from '@mui/icons-material';
 import { forgotPassword } from '../services/userService';
 
 const ForgotPasswordPage = () => {
@@ -38,15 +44,11 @@ const ForgotPasswordPage = () => {
     
     try {
       const response = await forgotPassword({ email });
-      console.log('Şifremi unuttum cevabı:', response);
       
       if (response.success) {
         setSuccess(true);
-        
-        // Geliştirme ortamında kod bilgisi varsa debug amaçlı konsola yazalım
-        if (response.developerInfo && response.developerInfo.resetCode) {
-          console.log('Debug - Sıfırlama kodu:', response.developerInfo.resetCode);
-        }
+      } else {
+        setError(response.message || 'Şifre sıfırlama işlemi başarısız oldu.');
       }
     } catch (err) {
       console.error('Şifremi unuttum hatası:', err);
@@ -61,7 +63,7 @@ const ForgotPasswordPage = () => {
 
   const handleContinue = () => {
     navigate('/verify-reset-code', { 
-      state: { email } 
+      state: { email }
     });
   };
 
@@ -82,9 +84,14 @@ const ForgotPasswordPage = () => {
             width: '100%', 
             display: 'flex', 
             flexDirection: 'column', 
-            alignItems: 'center' 
+            alignItems: 'center',
+            borderRadius: 2 
           }}
         >
+          <Avatar sx={{ m: 1, bgcolor: 'primary.main' }}>
+            <LockIcon />
+          </Avatar>
+
           <Typography component="h1" variant="h5" gutterBottom>
             Şifremi Unuttum
           </Typography>
@@ -113,18 +120,25 @@ const ForgotPasswordPage = () => {
               value={email}
               onChange={handleChange}
               disabled={loading || success}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EmailIcon />
+                  </InputAdornment>
+                ),
+              }}
             />
             
             {!success ? (
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2, py: 1.2 }}
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                sx={{ mt: 3, mb: 2, py: 1.2 }}
                 disabled={loading}
-            >
-              {loading ? <CircularProgress size={24} /> : 'Sıfırlama Kodu Gönder'}
-            </Button>
+              >
+                {loading ? <CircularProgress size={24} /> : 'Sıfırlama Kodu Gönder'}
+              </Button>
             ) : (
               <Button
                 fullWidth
@@ -133,7 +147,7 @@ const ForgotPasswordPage = () => {
                 sx={{ mt: 3, mb: 2, py: 1.2 }}
                 onClick={handleContinue}
               >
-                Kodu Doğrula
+                Devam Et - Kodu Doğrula
               </Button>
             )}
             

@@ -24,7 +24,9 @@ export const AuthProvider = ({ children }) => {
       try {
         if (isAuthenticated()) {
           const userData = await getUserProfile();
-          setUser(userData);
+          if (userData && userData.success) {
+            setUser(userData.data.user);
+          }
         }
       } catch (err) {
         console.error('Kimlik doğrulama hatası:', err);
@@ -43,7 +45,9 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     try {
       const data = await loginUser({ email, password });
-      setUser(data.user);
+      if (data.success) {
+        setUser(data.data.user);
+      }
       return data;
     } catch (err) {
       setError(err.message || 'Giriş yapılırken bir hata oluştu.');
@@ -63,6 +67,7 @@ export const AuthProvider = ({ children }) => {
   // Context değerleri
   const value = {
     user,
+    setUser,
     loading,
     error,
     login,
