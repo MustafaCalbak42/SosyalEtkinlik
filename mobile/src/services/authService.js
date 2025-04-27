@@ -83,7 +83,7 @@ export const verifyResetCode = async (verificationData) => {
 
 /**
  * Şifre sıfırlama
- * @param {Object} passwordData - Şifre bilgileri (email, verificationId, newPassword)
+ * @param {Object} passwordData - Şifre bilgileri (email, code, password)
  * @returns {Promise<Object>}
  */
 export const resetPassword = async (passwordData) => {
@@ -106,5 +106,50 @@ export const resendVerificationEmail = async (emailData) => {
     return response.data;
   } catch (error) {
     throw error;
+  }
+};
+
+/**
+ * E-posta doğrulama deep link parametrelerini işle
+ * @param {Object} params - Deep link parametreleri
+ * @returns {Promise<Object>}
+ */
+export const processVerificationDeepLink = async (params) => {
+  try {
+    if (params.success === 'true' || params.success === true) {
+      // Başarılı doğrulama, token varsa kaydet
+      if (params.token) {
+        await AsyncStorage.setItem('token', params.token);
+      }
+      
+      if (params.refreshToken) {
+        await AsyncStorage.setItem('refreshToken', params.refreshToken);
+      }
+      
+      // Kullanıcı bilgilerini al
+      const userResponse = await api.user.getProfile();
+      if (userResponse.data && userResponse.data.success) {
+        await AsyncStorage.setItem('user', JSON.stringify(userResponse.data.data));
+      }
+      
+      return {
+        success: true,
+        message: params.message || 'E-posta adresiniz başarıyla doğrulandı.'
+      };
+    } else {
+      // Başarısız doğrulama
+      return {
+        success: false,
+        message: params.error || 'E-posta doğrulama işlemi başarısız oldu.',
+        email: params.email || ''
+      };
+    }
+  } catch (error) {
+    console.error('E-posta doğrulama işleme hatası:', error);
+    return {
+      success: false,
+      message: 'E-posta doğrulama işlenirken bir hata oluştu.',
+      error: error
+    };
   }
 }; 

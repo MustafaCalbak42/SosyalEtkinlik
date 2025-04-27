@@ -84,9 +84,22 @@ const forgotPasswordValidation = [
 
 // Şifre sıfırlama doğrulama kuralları
 const resetPasswordValidation = [
-  check('token')
+  check('email')
     .trim()
-    .notEmpty().withMessage('Token zorunludur'),
+    .notEmpty().withMessage('Email adresi zorunludur')
+    .isEmail().withMessage('Geçerli bir email adresi giriniz')
+    .normalizeEmail(),
+    
+  check('code')
+    .optional()
+    .trim()
+    .isLength({ min: 6, max: 6 }).withMessage('Doğrulama kodu 6 haneli olmalıdır')
+    .isNumeric().withMessage('Doğrulama kodu sadece rakamlardan oluşmalıdır'),
+    
+  check('verificationId')
+    .optional()
+    .trim()
+    .notEmpty().withMessage('Doğrulama ID gereklidir'),
     
   check('password')
     .trim()

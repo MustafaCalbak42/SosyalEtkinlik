@@ -7,6 +7,7 @@ import RegisterScreen from '../screens/RegisterScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import VerifyResetCodeScreen from '../screens/VerifyResetCodeScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
+import EmailVerifiedScreen from '../screens/EmailVerifiedScreen';
 
 const Stack = createStackNavigator();
 
@@ -50,6 +51,14 @@ const AuthNavigator = () => {
         name="ResetPassword" 
         component={ResetPasswordScreen} 
         options={{ title: 'Şifremi Sıfırla' }}
+      />
+      <Stack.Screen 
+        name="EmailVerified" 
+        component={EmailVerifiedScreen} 
+        options={{ 
+          title: 'E-posta Doğrulanıyor',
+          headerLeft: null // Geri butonu olmadan tam ekran göster
+        }}
       />
     </Stack.Navigator>
   );

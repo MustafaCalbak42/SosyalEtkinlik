@@ -4,6 +4,12 @@
     "slug": "sosyal-etkinlik",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1976d2"
+    },
     "updates": {
       "fallbackToCacheTimeout": 0
     },
@@ -16,7 +22,11 @@
     },
     "android": {
       "backgroundColor": "#1976d2",
-      "package": "com.sosyaletkinlik.app"
+      "package": "com.sosyaletkinlik.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1976d2"
+      }
     },
     "web": {},
     "scheme": "sosyaletkinlik",
@@ -25,12 +35,6 @@
         "projectId": "sosyal-etkinlik"
       }
     },
-    "owner": "sosyaletkinlik",
-    "runtimeVersion": {
-      "policy": "sdkVersion"
-    },
-    "plugins": [
-      "expo-dev-client"
-    ]
+    "owner": "sosyaletkinlik"
   }
 } 

@@ -25,10 +25,10 @@ const ResetPasswordScreen = ({ navigation, route }) => {
   
   // Route params
   const email = route.params?.email || '';
-  const verificationId = route.params?.verificationId || '';
+  const code = route.params?.code || '';
   
   useEffect(() => {
-    if (!email || !verificationId) {
+    if (!email || !code) {
       Alert.alert('Hata', 'Geçersiz şifre sıfırlama isteği', [
         {
           text: 'Tamam',
@@ -36,7 +36,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
         }
       ]);
     }
-  }, [email, verificationId, navigation]);
+  }, [email, code, navigation]);
 
   const validateInputs = () => {
     if (!password) {
@@ -68,8 +68,8 @@ const ResetPasswordScreen = ({ navigation, route }) => {
     try {
       const response = await api.auth.resetPassword({
         email,
-        verificationId,
-        newPassword: password
+        verificationId: code,
+        password: password
       });
       
       if (response.data && response.data.success) {

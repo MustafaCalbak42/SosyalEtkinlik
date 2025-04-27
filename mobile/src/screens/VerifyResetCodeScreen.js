@@ -56,7 +56,7 @@ const VerifyResetCodeScreen = ({ navigation, route }) => {
         setTimeout(() => {
           navigation.navigate('ResetPassword', {
             email,
-            verificationId: response.data.verificationId
+            code: response.data.verificationId
           });
         }, 1000);
       } else {

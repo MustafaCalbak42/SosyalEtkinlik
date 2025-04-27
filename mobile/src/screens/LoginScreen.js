@@ -21,6 +21,9 @@ const LoginScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [secureTextEntry, setSecureTextEntry] = useState(true);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
 
   // Route parametresinden gelen mesajı kontrol et
   useEffect(() => {
@@ -50,14 +53,12 @@ const LoginScreen = ({ navigation, route }) => {
   };
 
   const handleLogin = async () => {
-    setError('');
-    
-    if (!validateInputs()) {
-      return;
-    }
-    
+    if (!validateInputs()) return;
+
     setLoading(true);
-    
+    setError('');
+    setNeedsVerification(false);
+
     try {
       const response = await api.auth.login({
         email,
@@ -76,16 +77,21 @@ const LoginScreen = ({ navigation, route }) => {
           routes: [{ name: 'Main' }],
         });
       } else {
-        setError('Giriş yaparken bir hata oluştu');
+        setError(response.data?.message || 'Giriş yapılamadı');
       }
-    } catch (err) {
-      console.error('Login error:', err);
+    } catch (error) {
+      console.error('Login error:', error.response?.data || error.message);
       
-      // Hata mesajını göster
-      setError(
-        err.response?.data?.message || 
-        'Giriş yaparken bir hata oluştu. Lütfen bilgilerinizi kontrol edin.'
-      );
+      // E-posta doğrulanmamış hatası için özel işlem
+      if (error.response?.data?.message && 
+          (error.response.data.message.includes('e-posta adresinizi doğrulayın') || 
+           error.response.data.message.includes('e-posta doğrulama'))) {
+        setError(error.response.data.message);
+        setNeedsVerification(true);
+        setVerificationEmail(email);
+      } else {
+        setError(error.response?.data?.message || 'Bir hata oluştu. Lütfen tekrar deneyin.');
+      }
     } finally {
       setLoading(false);
     }
@@ -93,6 +99,35 @@ const LoginScreen = ({ navigation, route }) => {
 
   const toggleSecureTextEntry = () => {
     setSecureTextEntry(!secureTextEntry);
+  };
+
+  const handleResendVerification = async () => {
+    // Doğrulama için e-posta kontrol et
+    if (!verificationEmail) {
+      setError('Doğrulama e-postası göndermek için lütfen önce e-posta adresinizi girin');
+      return;
+    }
+
+    setResendLoading(true);
+    try {
+      const response = await api.auth.resendVerification({ email: verificationEmail });
+      if (response.data && response.data.success) {
+        Alert.alert(
+          'Başarılı',
+          'Doğrulama e-postası adresinize gönderildi. Lütfen e-posta kutunuzu kontrol edin.',
+          [{ text: 'Tamam' }]
+        );
+        setNeedsVerification(false);
+        setError('');
+      } else {
+        setError(response.data?.message || 'Doğrulama e-postası gönderilemedi.');
+      }
+    } catch (error) {
+      console.error('Resend verification error:', error.response?.data || error.message);
+      setError(error.response?.data?.message || 'Doğrulama e-postası gönderilirken bir hata oluştu.');
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   return (
@@ -112,6 +147,19 @@ const LoginScreen = ({ navigation, route }) => {
           {error ? (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>{error}</Text>
+              {needsVerification && (
+                <TouchableOpacity 
+                  style={styles.resendButton} 
+                  onPress={handleResendVerification}
+                  disabled={resendLoading}
+                >
+                  {resendLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.resendButtonText}>Doğrulama Bağlantısını Yeniden Gönder</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           ) : null}
           
@@ -297,6 +345,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     marginLeft: 5,
+  },
+  resendButton: {
+    backgroundColor: '#1976d2',
+    borderRadius: 10,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  resendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

@@ -62,18 +62,21 @@ const LoginPage = () => {
     
     try {
       const response = await loginUser(data);
+      
       if (response.success) {
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('refreshToken', response.data.refreshToken);
-        setUser(response.data.user);
+        if (response.data.refreshToken) {
+          localStorage.setItem('refreshToken', response.data.refreshToken);
+        }
         
-        // Kullanıcının e-posta durumunu kontrol et
-        if (!response.data.user.emailVerified) {
+        // Kullanıcının e-posta doğrulama durumunu kontrol et
+        if (response.data.user && !response.data.user.emailVerified) {
           setNeedsVerification(true);
           setVerificationEmail(data.email);
-          setError(response.message || 'E-posta adresinizi doğrulayın');
+          setError('Lütfen e-posta adresinizi doğrulayın');
         } else {
-          navigate('/profile');
+          setUser(response.data.user);
+          navigate('/');
         }
       } else {
         setError(response.message || 'Giriş başarısız');
@@ -81,8 +84,9 @@ const LoginPage = () => {
     } catch (error) {
       console.error('Login error:', error);
       setError(error.message || 'Giriş sırasında bir hata oluştu');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // Doğrulama e-postasını tekrar gönder
@@ -107,7 +111,9 @@ const LoginPage = () => {
       const response = await resendVerificationEmail({ email: verificationEmail });
       if (response.success) {
         setResendSuccess(true);
-        setTestEmailUrl(response.data.testEmailUrl);
+        if (response.data && response.data.testEmailUrl) {
+          setTestEmailUrl(response.data.testEmailUrl);
+        }
       } else {
         setResendError(response.message || 'Doğrulama e-postası gönderilirken bir hata oluştu.');
       }
@@ -149,7 +155,7 @@ const LoginPage = () => {
               severity="error" 
               sx={{ mb: 2 }}
               action={
-                error.includes('e-posta') && (
+                needsVerification && (
                   <Button 
                     color="inherit" 
                     size="small" 
@@ -207,7 +213,7 @@ const LoginPage = () => {
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
-                      aria-label="Şifre görünürlüğünü değiştir"
+                      aria-label="şifre görünürlüğünü değiştir"
                       onClick={handleClickShowPassword}
                       edge="end"
                     >
@@ -226,6 +232,7 @@ const LoginPage = () => {
               error={!!errors.password}
               helperText={errors.password?.message}
             />
+            
             <Button
               type="submit"
               fullWidth
@@ -235,7 +242,8 @@ const LoginPage = () => {
             >
               {loading ? <CircularProgress size={24} /> : 'Giriş Yap'}
             </Button>
-            <Grid container spacing={1}>
+            
+            <Grid container spacing={2}>
               <Grid item xs>
                 <Link component={RouterLink} to="/forgot-password" variant="body2">
                   Şifremi Unuttum
@@ -243,73 +251,76 @@ const LoginPage = () => {
               </Grid>
               <Grid item>
                 <Link component={RouterLink} to="/register" variant="body2">
-                  Hesabınız yok mu? Kayıt olun
+                  Hesabınız yok mu? Kaydolun
                 </Link>
               </Grid>
             </Grid>
+            
+            <Button
+              fullWidth
+              color="primary"
+              variant="outlined"
+              component={RouterLink}
+              to="/"
+              sx={{ mt: 3 }}
+            >
+              Ana Sayfaya Dön
+            </Button>
           </Box>
         </Paper>
       </Box>
 
-      {/* E-posta Doğrulama Dialog */}
-      <Dialog open={resendDialog} onClose={handleCloseResendDialog}>
-        <DialogTitle>
-          E-posta Doğrulama
+      {/* Doğrulama E-postası Yeniden Gönderme Dialogu */}
+      <Dialog
+        open={resendDialog}
+        onClose={handleCloseResendDialog}
+        aria-labelledby="resend-dialog-title"
+      >
+        <DialogTitle id="resend-dialog-title">
+          Doğrulama E-postasını Yeniden Gönder
         </DialogTitle>
         <DialogContent>
-          {resendSuccess ? (
-            <Alert severity="success" sx={{ mt: 2 }}>
-              <Typography variant="body1" gutterBottom>
-                Doğrulama e-postası <strong>{verificationEmail}</strong> adresine yeniden gönderildi.
-              </Typography>
-              <Typography variant="body2">
-                Lütfen e-posta kutunuzu kontrol edin. E-postayı göremiyorsanız spam klasörünü de kontrol edin.
-              </Typography>
-              {/* Test e-posta URL'si varsa göster */}
-              {testEmailUrl && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1, border: '1px solid #cce5ff' }}>
-                  <Typography variant="subtitle2" color="primary" gutterBottom>
-                    Test modu aktif - E-postayı hemen görüntüleyin:
-                  </Typography>
-                  <Button 
-                    variant="contained" 
-                    color="primary"
-                    size="medium"
-                    href={testEmailUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ mt: 1, width: '100%' }}
-                    startIcon={<OpenInNewIcon />}
-                  >
-                    Test E-postasını Görüntüle
-                  </Button>
-                </Box>
-              )}
+          <DialogContentText>
+            {!resendSuccess ? (
+              `${verificationEmail} adresine bir doğrulama e-postası göndermek istiyor musunuz?`
+            ) : (
+              `Doğrulama e-postası ${verificationEmail} adresine başarıyla gönderildi. Lütfen gelen kutunuzu kontrol edin.`
+            )}
+          </DialogContentText>
+          
+          {resendError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {resendError}
             </Alert>
-          ) : (
-            <>
-              <DialogContentText>
-                <strong>{verificationEmail}</strong> adresine yeni bir doğrulama e-postası göndermek istiyor musunuz?
-              </DialogContentText>
-              {resendError && (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  {resendError}
-                </Alert>
-              )}
-            </>
+          )}
+          
+          {resendSuccess && testEmailUrl && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                Test ortamında, doğrulama e-postasını görüntülemek için aşağıdaki bağlantıyı kullanabilirsiniz:
+              </Typography>
+              <Link 
+                href={testEmailUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                sx={{ display: 'flex', alignItems: 'center', mt: 1 }}
+              >
+                E-postayı Görüntüle <OpenInNewIcon fontSize="small" sx={{ ml: 0.5 }} />
+              </Link>
+            </Alert>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseResendDialog}>
-            Kapat
+            {resendSuccess ? 'Kapat' : 'İptal'}
           </Button>
           {!resendSuccess && (
             <Button 
               onClick={handleConfirmResend} 
-              variant="contained" 
+              color="primary" 
               disabled={resendLoading}
             >
-              {resendLoading ? <CircularProgress size={24} /> : 'Doğrulama E-postası Gönder'}
+              {resendLoading ? <CircularProgress size={24} /> : 'Gönder'}
             </Button>
           )}
         </DialogActions>

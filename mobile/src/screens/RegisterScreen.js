@@ -14,6 +14,9 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
+import HobbiesPicker from '../components/HobbiesPicker';
+import CityPicker from '../components/CityPicker';
+import InterestsPicker from '../components/InterestsPicker';
 
 const RegisterScreen = ({ navigation }) => {
   const [fullName, setFullName] = useState('');
@@ -21,6 +24,10 @@ const RegisterScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [city, setCity] = useState('');
+  const [bio, setBio] = useState('');
+  const [hobbies, setHobbies] = useState([]);
+  const [interests, setInterests] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -32,6 +39,9 @@ const RegisterScreen = ({ navigation }) => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [cityError, setCityError] = useState('');
+  const [hobbiesError, setHobbiesError] = useState('');
+  const [bioError, setBioError] = useState('');
 
   const validateInputs = () => {
     let isValid = true;
@@ -79,15 +89,6 @@ const RegisterScreen = ({ navigation }) => {
     } else if (password.length < 6) {
       setPasswordError('Şifre en az 6 karakter olmalıdır');
       isValid = false;
-    } else if (!/\d/.test(password)) {
-      setPasswordError('Şifre en az bir rakam içermelidir');
-      isValid = false;
-    } else if (!/[a-z]/.test(password)) {
-      setPasswordError('Şifre en az bir küçük harf içermelidir');
-      isValid = false;
-    } else if (!/[A-Z]/.test(password)) {
-      setPasswordError('Şifre en az bir büyük harf içermelidir');
-      isValid = false;
     } else {
       setPasswordError('');
     }
@@ -103,6 +104,22 @@ const RegisterScreen = ({ navigation }) => {
       setConfirmPasswordError('');
     }
     
+    // Şehir kontrolü
+    if (!city) {
+      setCityError('Şehir seçimi gereklidir');
+      isValid = false;
+    } else {
+      setCityError('');
+    }
+    
+    // Biyografi kontrolü (opsiyonel ama maksimum karakter sınırı var)
+    if (bio && bio.trim().length > 500) {
+      setBioError('Biyografi en fazla 500 karakter olmalıdır');
+      isValid = false;
+    } else {
+      setBioError('');
+    }
+    
     return isValid;
   };
 
@@ -116,48 +133,24 @@ const RegisterScreen = ({ navigation }) => {
     setError('');
     
     try {
-      const response = await api.auth.register({
+      const registerData = {
         username,
         email,
         password,
-        fullName
-      });
+        fullName,
+        city,
+        bio: bio || '',
+        hobbies: hobbies.map(hobby => typeof hobby === 'object' ? hobby._id : hobby),
+        interests: interests || []
+      };
+      
+      const response = await api.auth.register(registerData);
       
       if (response.data && response.data.success) {
-        // API'den gelen UI mesajını kullan
-        const uiMessage = response.data.uiMessage || {
-          title: 'Kayıt Başarılı',
-          body: 'Hesabınız oluşturuldu. Lütfen e-posta adresinizi doğrulayın.',
-          type: 'success'
-        };
-        
-        // Ek geliştirici bilgilerini ekleme (sadece geliştirme ortamında)
-        let additionalInfo = '';
-        
-        // Test ortamı için email önizleme bağlantısı varsa mesaja ekle
-        if (response.data.emailPreviewUrl) {
-          additionalInfo += '\n\nGeliştirme ortamında olduğunuz için, test e-posta önizlemesine aşağıdaki bağlantıdan ulaşabilirsiniz:\n' + 
-            response.data.emailPreviewUrl;
-          
-          console.log('Doğrulama E-postası Önizleme:', response.data.emailPreviewUrl);
-        }
-        
-        // Eğer token bilgisi varsa onu da göster (sadece DEV ortamı)
-        if (response.data.developerInfo && response.data.developerInfo.verificationToken) {
-          const token = response.data.developerInfo.verificationToken;
-          const emailType = response.data.developerInfo.emailSendingType || 'test';
-          
-          console.log('Doğrulama Token\'ı:', token);
-          console.log('E-posta Türü:', emailType);
-          console.log('API URL:', `http://10.0.2.2:5000/api/users/verify-email/${token}`);
-          
-          additionalInfo += '\n\nDoğrulama token: ' + token;
-          additionalInfo += '\nE-posta tipi: ' + (emailType === 'real' ? 'Gerçek e-posta' : 'Test e-posta');
-        }
-        
+        // Kayıt başarılı, kullanıcıya e-posta doğrulama bildirimi göster
         Alert.alert(
-          uiMessage.title,
-          uiMessage.body + additionalInfo,
+          'Kayıt Başarılı',
+          'Hesabınız oluşturuldu. Lütfen e-posta adresinize gönderilen doğrulama bağlantısına tıklayarak hesabınızı aktifleştirin.',
           [
             {
               text: 'Tamam',
@@ -167,11 +160,20 @@ const RegisterScreen = ({ navigation }) => {
             }
           ]
         );
+        
+        // Geliştirme ortamında ek bilgileri konsola yazdır
+        if (response.data.emailPreviewUrl) {
+          console.log('Doğrulama E-postası Önizleme:', response.data.emailPreviewUrl);
+        }
+        
+        if (response.data.developerInfo && response.data.developerInfo.verificationToken) {
+          console.log('Doğrulama Token:', response.data.developerInfo.verificationToken);
+        }
       } else {
         setError(response.data?.message || 'Kayıt işlemi başarısız oldu');
       }
     } catch (err) {
-      console.error('Register error:', err);
+      console.error('Register error:', err.response?.data || err.message);
       setError(
         err.response?.data?.message || 
         'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.'
@@ -193,6 +195,7 @@ const RegisterScreen = ({ navigation }) => {
         <View style={styles.logoContainer}>
           <MaterialIcons name="person-add" size={64} color="#1976d2" />
           <Text style={styles.title}>Hesap Oluştur</Text>
+          <Text style={styles.subtitle}>İlgi alanlarınıza göre etkinliklere katılın ve yeni insanlarla tanışın</Text>
         </View>
         
         {/* Hata mesajı */}
@@ -203,6 +206,8 @@ const RegisterScreen = ({ navigation }) => {
         ) : null}
         
         <View style={styles.formContainer}>
+          <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
+          
           {/* Ad Soyad giriş alanı */}
           <View style={styles.inputContainer}>
             <View style={styles.iconContainer}>
@@ -303,6 +308,45 @@ const RegisterScreen = ({ navigation }) => {
           </View>
           {confirmPasswordError ? <Text style={styles.fieldError}>{confirmPasswordError}</Text> : null}
           
+          <View style={styles.divider}></View>
+          
+          <Text style={styles.sectionTitle}>Konum ve İlgi Alanları</Text>
+          
+          {/* Şehir seçim alanı */}
+          <CityPicker
+            value={city}
+            onSelect={setCity}
+            error={cityError}
+          />
+          
+          {/* Hobiler seçim alanı */}
+          <HobbiesPicker
+            value={hobbies}
+            onChange={setHobbies}
+            error={hobbiesError}
+          />
+          
+          {/* İlgi Alanları */}
+          <InterestsPicker 
+            value={interests}
+            onChange={setInterests}
+          />
+          
+          {/* Biyografi giriş alanı */}
+          <View style={styles.bioContainer}>
+            <TextInput
+              style={styles.bioInput}
+              placeholder="Kendinizi kısaca tanıtın..."
+              value={bio}
+              onChangeText={setBio}
+              multiline={true}
+              numberOfLines={4}
+              maxLength={500}
+            />
+            <Text style={styles.charCount}>{bio ? bio.length : 0}/500</Text>
+          </View>
+          {bioError ? <Text style={styles.fieldError}>{bioError}</Text> : null}
+          
           {/* Kayıt Ol butonu */}
           <TouchableOpacity 
             style={[styles.registerButton, loading ? styles.disabledButton : null]}
@@ -312,7 +356,7 @@ const RegisterScreen = ({ navigation }) => {
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.registerButtonText}>Kayıt Ol</Text>
+              <Text style={styles.registerButtonText}>Kayıt Ol ve Etkinliklere Katıl</Text>
             )}
           </TouchableOpacity>
           
@@ -348,6 +392,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginTop: 10,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1976d2',
+    marginBottom: 15,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 20,
   },
   errorContainer: {
     backgroundColor: '#ffebee',
@@ -394,13 +455,34 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 5,
   },
+  bioContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 5,
+    marginVertical: 10,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  bioInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    textAlign: 'right',
+    color: '#777',
+    fontSize: 12,
+    marginTop: 5,
+  },
   registerButton: {
     backgroundColor: '#1976d2',
     borderRadius: 5,
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 15,
+    marginTop: 20,
     marginBottom: 10,
   },
   disabledButton: {

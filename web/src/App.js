@@ -6,7 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 // Context
 import { AuthProvider } from './context/AuthContext';
 
-// Pages - Normal imports
+// Pages
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -15,10 +15,11 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import EmailVerifiedPage from './pages/EmailVerifiedPage';
 import ProfilePage from './pages/ProfilePage';
 import ProfileSettingsPage from './pages/ProfileSettingsPage';
+import HomePage from './pages/HomePage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
-  // localStorage'dan token kontrolü (basit kontrol)
+  // localStorage'dan token kontrolü
   const isAuthenticated = localStorage.getItem('token') !== null;
   
   if (!isAuthenticated) {
@@ -84,13 +85,28 @@ function App() {
             {/* Şifre sıfırlama akışı */}
             <Route path="/verify-reset-code" element={<VerifyResetCodePage />} />
             <Route path="/reset-password/new" element={<ResetPasswordPage />} />
-            <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+            <Route path="/reset-password/:token" element={<ResetPasswordPage />} /> {/* Legacy token-based reset */}
             
-            <Route path="/verify-email/:token" element={<Navigate to="/api/users/verify-email/:token" />} />
+            {/* E-posta doğrulama */}
             <Route path="/email-verified" element={<EmailVerifiedPage />} />
             
-            {/* Ana sayfayı login'e yönlendir */}
-            <Route path="/" element={<Navigate to="/login" />} />
+            {/* Ana Sayfa */}
+            <Route 
+              path="/" 
+              element={
+                <ProtectedRoute>
+                  <HomePage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/home" 
+              element={
+                <ProtectedRoute>
+                  <HomePage />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Korumalı Rotalar */}
             <Route 

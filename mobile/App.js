@@ -3,6 +3,7 @@ import { StatusBar, LogBox, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import AppNavigator from './src/navigation/AppNavigator';
+import { AuthProvider } from './src/contexts/AuthContext';
 import * as Linking from 'expo-linking';
 
 // Performans iyileştirmesi için ekran kurulumunu etkinleştir
@@ -11,6 +12,7 @@ enableScreens();
 // Deep link hata uyarılarını gösterme
 LogBox.ignoreLogs([
   'Linking requires a build-time setting `scheme` in the project\'s Expo config',
+  'Some dependencies are incompatible with the installed expo version',
 ]);
 
 const App = () => {
@@ -50,7 +52,9 @@ const App = () => {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor="#1976d2" />
-      <AppNavigator linking={linking} />
+      <AuthProvider>
+        <AppNavigator linking={linking} />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 };
