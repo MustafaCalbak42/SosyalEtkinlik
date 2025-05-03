@@ -10,14 +10,23 @@ export const loginUser = async (loginData) => {
   try {
     const response = await api.auth.login(loginData);
     
-    // Token'ları AsyncStorage'a kaydet
-    if (response.data && response.data.success && response.data.data.token) {
-      await AsyncStorage.setItem('token', response.data.data.token);
-      await AsyncStorage.setItem('refreshToken', response.data.data.refreshToken);
+    if (response.data.success && response.data.data) {
+      // Token'ı AsyncStorage'a kaydet
+      if (response.data.data.token) {
+        await AsyncStorage.setItem('token', response.data.data.token);
+      }
+      
+      if (response.data.data.refreshToken) {
+        await AsyncStorage.setItem('refreshToken', response.data.data.refreshToken);
+      }
+      
+      // Kullanıcı bilgilerini kaydet
+      await AsyncStorage.setItem('user', JSON.stringify(response.data.data));
     }
     
     return response.data;
   } catch (error) {
+    console.error('Login error:', error);
     throw handleError(error);
   }
 };
@@ -85,6 +94,72 @@ export const isAuthenticated = async () => {
 };
 
 /**
+ * Şifre sıfırlama isteği oluşturur (şifremi unuttum)
+ * @param {Object} emailData - Email bilgisi
+ * @returns {Promise<Object>}
+ */
+export const forgotPassword = async (emailData) => {
+  try {
+    console.log('Şifre sıfırlama isteği gönderiliyor:', emailData);
+    const response = await api.auth.forgotPassword(emailData);
+    console.log('Şifre sıfırlama cevabı:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Şifre sıfırlama hatası:', error);
+    throw handleError(error);
+  }
+};
+
+/**
+ * Şifre sıfırlama kodunu doğrular
+ * @param {Object} data - Kod doğrulama verileri (email, code)
+ * @returns {Promise<Object>}
+ */
+export const verifyResetCode = async (data) => {
+  try {
+    console.log('Kod doğrulama isteği gönderiliyor:', data);
+    const response = await api.auth.verifyResetCode(data);
+    console.log('Kod doğrulama cevabı:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Kod doğrulama hatası:', error);
+    throw handleError(error);
+  }
+};
+
+/**
+ * Şifreyi sıfırlar
+ * @param {Object} data - Şifre sıfırlama verileri (email, code, password)
+ * @returns {Promise<Object>}
+ */
+export const resetPassword = async (data) => {
+  try {
+    console.log('Şifre yenileme isteği gönderiliyor:', {...data, password: '******'});
+    const response = await api.auth.resetPassword(data);
+    console.log('Şifre yenileme cevabı:', response.data);
+    
+    // Otomatik giriş için token varsa kaydet
+    if (response.data.success && response.data.data) {
+      if (response.data.data.token) {
+        await AsyncStorage.setItem('token', response.data.data.token);
+      }
+      
+      if (response.data.data.refreshToken) {
+        await AsyncStorage.setItem('refreshToken', response.data.data.refreshToken);
+      }
+      
+      // Kullanıcı bilgilerini kaydet
+      await AsyncStorage.setItem('user', JSON.stringify(response.data.data));
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Şifre yenileme hatası:', error);
+    throw handleError(error);
+  }
+};
+
+/**
  * API hata işleme
  * @param {Error} error - Axios hatası
  * @returns {Error} - İşlenmiş hata
@@ -110,5 +185,8 @@ export default {
   loginUser,
   registerUser,
   logoutUser,
-  isAuthenticated
+  isAuthenticated,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword
 }; 

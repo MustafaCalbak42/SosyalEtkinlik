@@ -38,9 +38,15 @@ export const AuthProvider = ({ children }) => {
       const response = await apiClient.users.getCurrentUser();
       if (response.data) {
         setUserProfile(response.data);
+        return { success: true };
       }
+      return { success: false, message: 'Kullanıcı profili yüklenemedi' };
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      return { 
+        success: false, 
+        message: error.response?.data?.message || 'Kullanıcı profili yüklenirken bir hata oluştu' 
+      };
     }
   };
 

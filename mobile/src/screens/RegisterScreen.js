@@ -160,24 +160,15 @@ const RegisterScreen = ({ navigation }) => {
             }
           ]
         );
-        
-        // Geliştirme ortamında ek bilgileri konsola yazdır
-        if (response.data.emailPreviewUrl) {
-          console.log('Doğrulama E-postası Önizleme:', response.data.emailPreviewUrl);
-        }
-        
-        if (response.data.developerInfo && response.data.developerInfo.verificationToken) {
-          console.log('Doğrulama Token:', response.data.developerInfo.verificationToken);
-        }
       } else {
         setError(response.data?.message || 'Kayıt işlemi başarısız oldu');
       }
     } catch (err) {
       console.error('Register error:', err.response?.data || err.message);
-      setError(
-        err.response?.data?.message || 
-        'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.'
-      );
+      const errorMessage = err.response?.data?.message || 
+        err.response?.data?.error || 
+        'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
