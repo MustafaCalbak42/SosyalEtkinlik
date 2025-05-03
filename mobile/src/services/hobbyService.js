@@ -6,10 +6,31 @@ import api from '../shared/api/apiClient';
  */
 export const getAllHobbies = async () => {
   try {
+    console.log('Hobiler getiriliyor...');
     const response = await api.hobbies.getAll();
+    console.log('Hobiler API yanıtı:', response);
+    
+    if (!response) {
+      throw new Error('Sunucudan yanıt alınamadı');
+    }
+    
+    if (response.status === 404) {
+      throw new Error('Hobiler bulunamadı');
+    }
+    
+    if (response.status >= 400) {
+      throw new Error(response.data?.message || 'Hobiler alınırken bir hata oluştu');
+    }
+    
+    if (!Array.isArray(response.data)) {
+      console.error('Beklenmeyen yanıt formatı:', response.data);
+      throw new Error('Hobiler beklenen formatta değil');
+    }
+    
     return response.data;
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Hobiler alınırken bir hata oluştu');
+    console.error('Hobiler alınırken hata:', error);
+    throw new Error(error.message || 'Hobiler alınırken bir hata oluştu');
   }
 };
 

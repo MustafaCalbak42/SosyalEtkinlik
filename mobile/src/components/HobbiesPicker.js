@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getAllHobbies } from '../services/hobbyService';
 import { HOBBY_CATEGORIES } from '../shared/constants/appConstants';
@@ -15,10 +15,22 @@ const HobbiesPicker = ({ value = [], onChange, error }) => {
     const fetchHobbies = async () => {
       setLoading(true);
       try {
+        console.log('Hobiler yükleniyor...');
         const response = await getAllHobbies();
-        setHobbies(response);
+        console.log('Hobiler yanıtı:', response);
+        
+        if (Array.isArray(response)) {
+          if (response.length === 0) {
+            Alert.alert('Bilgi', 'Henüz hiç hobi eklenmemiş.');
+          }
+          setHobbies(response);
+        } else {
+          console.error('Hobiler beklenen formatta değil:', response);
+          Alert.alert('Hata', 'Hobiler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
+        }
       } catch (err) {
         console.error('Hobiler yüklenirken hata:', err);
+        Alert.alert('Hata', err.message || 'Hobiler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
       } finally {
         setLoading(false);
       }

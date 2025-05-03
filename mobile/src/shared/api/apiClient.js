@@ -7,7 +7,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API temel URL - mobil ve backend aynı ağda olmalı
-const BASE_URL = 'http://192.168.1.36:5000/api'; // Gerçek IP adresi
+const BASE_URL = 'http://192.168.136.133:5000/api'; // Backend'in çalıştığı bilgisayarın IP adresi
 
 console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
 
@@ -16,26 +16,47 @@ const apiClient = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
-  timeout: 10000, // 10 saniye zaman aşımı
+  timeout: 30000, // 30 saniye
+  validateStatus: function (status) {
+    return status >= 200 && status < 500;
+  }
 });
 
 // İstek engelleme (interceptors)
 apiClient.interceptors.request.use(
   async (config) => {
+    console.log('API İsteği:', config.url); // Debug için
     const token = await AsyncStorage.getItem('token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('API İstek Hatası:', error);
+    return Promise.reject(error);
+  }
 );
 
 // Yanıt engelleme
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('API Yanıtı:', response.config.url, response.status); // Debug için
+    return response;
+  },
   async (error) => {
+    console.error('API Yanıt Hatası:', error.config?.url, error.message);
+    
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı ve IP adresini kontrol edin.');
+    }
+    
+    if (error.message === 'Network Error') {
+      throw new Error('Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı ve IP adresini kontrol edin.');
+    }
+    
     const originalRequest = error.config;
     
     // Token geçersiz olduğunda yenileme işlemi
@@ -126,8 +147,9 @@ const api = {
   // Hobiler
   hobbies: {
     getAll: () => apiClient.get('/hobbies'),
+    getByCategory: (category) => apiClient.get(`/hobbies/category/${category}`),
     getById: (id) => apiClient.get(`/hobbies/${id}`),
-    getUsersByHobby: (id) => apiClient.get(`/users/hobby/${id}`),
+    getUsersByHobby: (id) => apiClient.get(`/hobbies/${id}/users`),
   },
   
   // Kullanıcılar

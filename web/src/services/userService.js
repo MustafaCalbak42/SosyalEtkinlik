@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = '/api/users';
+const API_URL = 'http://localhost:5000/api/users';
 
 // Axios instance
 const axiosInstance = axios.create();
@@ -252,7 +252,12 @@ export const getUsersByHobby = async (hobbyId) => {
 export const forgotPassword = async (emailData) => {
   try {
     console.log('Şifre sıfırlama isteği gönderiliyor:', emailData);
-    const response = await axios.post(`${API_URL}/forgot-password`, emailData);
+    const response = await axios.post(`${API_URL}/forgot-password`, emailData, {
+      timeout: 30000, // Timeout değerini 30 saniyeye artır
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
     console.log('Şifre sıfırlama cevabı:', response.data);
     return response.data;
   } catch (error) {
@@ -269,7 +274,12 @@ export const forgotPassword = async (emailData) => {
 export const verifyResetCode = async (data) => {
   try {
     console.log('Kod doğrulama isteği gönderiliyor:', data);
-    const response = await axios.post(`${API_URL}/verify-reset-code`, data);
+    const response = await axios.post(`${API_URL}/verify-reset-code`, data, {
+      timeout: 30000, // Timeout değerini 30 saniyeye artır
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
     console.log('Kod doğrulama cevabı:', response.data);
     return response.data;
   } catch (error) {
@@ -300,7 +310,12 @@ export const validateResetToken = async (token) => {
 export const resetPassword = async (data) => {
   try {
     console.log('Şifre yenileme isteği gönderiliyor:', {...data, password: '******'});
-    const response = await axios.post(`${API_URL}/reset-password`, data);
+    const response = await axios.post(`${API_URL}/reset-password`, data, {
+      timeout: 30000, // Timeout değerini 30 saniyeye artır
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
     console.log('Şifre yenileme cevabı:', response.data);
     return response.data;
   } catch (error) {

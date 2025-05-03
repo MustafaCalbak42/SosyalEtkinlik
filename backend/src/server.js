@@ -23,9 +23,19 @@ app.use(express.json());
 app.use(cors({
   origin: [
     process.env.CLIENT_URL_WEB || 'http://localhost:3000',
-    process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000'
+    process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000',
+    'http://localhost:19000',
+    'http://localhost:19006',
+    'exp://localhost:19000',
+    'exp://localhost:19006',
+    'http://192.168.136.133:5000',
+    'http://192.168.136.133:3000',
+    'http://192.168.136.133:19000',
+    'http://192.168.136.133:19006'
   ],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // File upload directory
@@ -83,11 +93,11 @@ const startServer = async () => {
     app.use('/api/events', eventRoutes);
     
     // Start server - Sunucuyu başlat
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log('------------------------------------------------');
       console.log('🚀 SUNUCU BAŞLATILDI');
       console.log(`🔧 Ortam: ${process.env.NODE_ENV}`);
-      console.log(`🌐 Adres: http://localhost:${PORT}`);
+      console.log(`🌐 Adres: http://192.168.136.133:${PORT}`);
       console.log('📱 Web ve Mobil istemcilere hizmet veriyor');
       console.log('------------------------------------------------');
     });
