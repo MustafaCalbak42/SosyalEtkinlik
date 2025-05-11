@@ -3,10 +3,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { ActivityIndicator, View, StatusBar, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoLinking from 'expo-linking';
+import { createStackNavigator } from '@react-navigation/stack';
 
 // Navigatörler
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
+
+const Stack = createStackNavigator();
 
 const AppNavigator = ({ linking }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -30,7 +33,7 @@ const AppNavigator = ({ linking }) => {
             EmailVerified: {
               path: 'email-verified',
               parse: {
-                success: (success) => success === 'true', // string -> boolean
+                success: (success) => success === 'true',
                 token: (token) => token,
                 refreshToken: (refreshToken) => refreshToken,
                 error: (error) => error,
@@ -48,14 +51,11 @@ const AppNavigator = ({ linking }) => {
         }
       }
     },
-    // Deep link'i yakalamak için
     async getInitialURL() {
       try {
-        // Uygulama kapalıyken açıldıysa
         const url = await ExpoLinking.getInitialURL();
         console.log('Initial URL:', url);
         
-        // Doğrudan URL açma olaylarını da yakalayalım (app-to-app linking)
         const initialUrl = await Linking.getInitialURL();
         console.log('Initial URL from Linking API:', initialUrl);
         
@@ -65,24 +65,18 @@ const AppNavigator = ({ linking }) => {
         return null;
       }
     },
-    // URL olaylarını dinlemek için abonelik ayarı
     subscribe(listener) {
-      // Hem Expo hem de React Native Linking kullanmayı deneyelim
-      
-      // Expo Linking
       const expoSubscription = ExpoLinking.addEventListener('url', ({ url }) => {
         console.log('Expo received URL:', url);
         listener(url);
       });
       
-      // React Native Linking
       const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
         console.log('RN received URL:', url);
         listener(url);
       });
 
       return () => {
-        // Abonelikten çıkma
         expoSubscription.remove();
         linkingSubscription.remove();
       };
@@ -92,9 +86,14 @@ const AppNavigator = ({ linking }) => {
   useEffect(() => {
     // Uygulama başladığında token kontrolü
     const bootstrapAsync = async () => {
-      // Token kontrolünü devre dışı bırakıyoruz, her zaman login ekranı gösterilecek
-      setUserToken(null);
-      setIsLoading(false);
+      try {
+        // Her zaman login ekranını göster
+        setUserToken(null);
+      } catch (e) {
+        console.error('Token kontrolü sırasında hata:', e);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     bootstrapAsync();
@@ -103,17 +102,13 @@ const AppNavigator = ({ linking }) => {
     const handleDeepLink = ({ url }) => {
       console.log('Deep Link URL event:', url);
       
-      // URL parametrelerini kontrol et
       if (url && url.includes('email-verified')) {
         console.log('Email verification deep link detected');
-        // URL parametrelerini alıp işleyeceğiz
       }
     };
     
-    // Deep link dinleyicisi ekle
     const subscription = Linking.addEventListener('url', handleDeepLink);
     
-    // İlk açılışta URL kontrolü
     Linking.getInitialURL().then(url => {
       if (url) {
         console.log('Initial URL on mount:', url);
@@ -131,12 +126,10 @@ const AppNavigator = ({ linking }) => {
     () => ({
       signIn: async (token, refreshToken) => {
         try {
-          // Token'ı AsyncStorage'a kaydet
           await AsyncStorage.setItem('token', token);
           if (refreshToken) {
             await AsyncStorage.setItem('refreshToken', refreshToken);
           }
-          // Kullanıcı state'ini güncelle
           setUserToken(token);
         } catch (e) {
           console.error('Token kaydedilirken hata:', e);
@@ -167,7 +160,17 @@ const AppNavigator = ({ linking }) => {
   return (
     <NavigationContainer linking={linkingConfig}>
       <StatusBar backgroundColor="#1976d2" barStyle="light-content" />
-      {userToken ? <MainNavigator /> : <AuthNavigator />}
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {userToken ? (
+          <Stack.Screen name="MainNavigator" component={MainNavigator} />
+        ) : (
+          <Stack.Screen 
+            name="AuthNavigator" 
+            component={AuthNavigator}
+            options={{ headerShown: false }}
+          />
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
 };
