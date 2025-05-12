@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,10 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
+import AuthContext from '../contexts/AuthContext';
 
 const LoginScreen = ({ navigation, route }) => {
+  const { signIn } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -60,37 +62,62 @@ const LoginScreen = ({ navigation, route }) => {
     setNeedsVerification(false);
 
     try {
+      console.log('Login attempt with:', { email });
+      
       const response = await api.auth.login({
         email,
         password
       });
       
-      if (response.data && response.data.token) {
-        await AsyncStorage.setItem('token', response.data.token);
+      console.log('Login response:', response.status, response.data);
+      
+      if (response.data && response.data.success && response.data.data && response.data.data.token) {
+        console.log('Login successful, saving token and redirecting');
         
-        if (response.data.refreshToken) {
-          await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+        // Token'ları AsyncStorage'a kaydet
+        const token = response.data.data.token;
+        const refreshToken = response.data.data.refreshToken;
+        
+        await AsyncStorage.setItem('token', token);
+        
+        if (refreshToken) {
+          await AsyncStorage.setItem('refreshToken', refreshToken);
         }
         
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
+        // AuthContext'in signIn metodunu çağır
+        await signIn(token, refreshToken);
+        
+        console.log('Login successful, signed in, navigating to Main');
+        
+        // Anasayfaya yönlendirme, AuthContext signIn işlemi sonrası AppNavigator
+        // otomatik olarak yönlendirme yapacak
       } else {
-        setError(response.data?.message || 'Giriş yapılamadı');
+        console.log('Login failed - no token in response');
+        setError(response.data?.message || 'Giriş yapılamadı. Lütfen bilgilerinizi kontrol edin.');
       }
     } catch (error) {
       console.error('Login error:', error.response?.data || error.message);
       
-      // E-posta doğrulanmamış hatası için özel işlem
-      if (error.response?.data?.message && 
+      // API hatalarını kullanıcıya gösterme
+      if (error.response?.status === 404) {
+        setError('Sunucuya ulaşılamıyor. Lütfen internet bağlantınızı kontrol edin.');
+      } else if (error.response?.status === 401) {
+        setError('E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol edin.');
+      } else if (error.response?.data?.message && 
           (error.response.data.message.includes('e-posta adresinizi doğrulayın') || 
            error.response.data.message.includes('e-posta doğrulama'))) {
         setError(error.response.data.message);
         setNeedsVerification(true);
         setVerificationEmail(email);
+      } else if (error.message.includes('Sunucu yanıt vermiyor')) {
+        // Timeout hatası - daha kullanıcı dostu bir mesaj göster
+        setError('Backend sunucuya bağlanılamıyor. Lütfen yöneticinize başvurun.');
+        console.log('SUNUCU BAĞLANTI HATASI. IP adresi ve port numarasını kontrol edin.');
+      } else if (error.message.includes('Ağ hatası')) {
+        // Ağ hatası - kullanıcıya yardımcı olacak bilgiler
+        setError('İnternet bağlantısı sorunu veya sunucu çalışmıyor. Lütfen bağlantınızı kontrol edin.');
       } else {
-        setError(error.response?.data?.message || 'Bir hata oluştu. Lütfen tekrar deneyin.');
+        setError(error.response?.data?.message || error.message || 'Bir hata oluştu. Lütfen tekrar deneyin.');
       }
     } finally {
       setLoading(false);

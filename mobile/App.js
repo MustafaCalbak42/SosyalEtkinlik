@@ -13,6 +13,7 @@ enableScreens();
 LogBox.ignoreLogs([
   'Linking requires a build-time setting `scheme` in the project\'s Expo config',
   'Some dependencies are incompatible with the installed expo version',
+  'Non-serializable values were found in the navigation state',
 ]);
 
 const App = () => {
@@ -34,15 +35,19 @@ const App = () => {
     prefixes: ['sosyaletkinlik://', 'exp://'],
     config: {
       screens: {
-        Login: 'login',
-        Register: 'register',
-        Main: 'main',
-        AuthNavigation: {
+        Auth: {
           screens: {
             Login: 'login',
             Register: 'register',
+            ForgotPassword: 'forgot-password',
             EmailVerified: 'email-verified',
             VerifyEmail: 'verify-email/:token'
+          }
+        },
+        Main: {
+          screens: {
+            Home: 'home',
+            Profile: 'profile',
           }
         }
       }

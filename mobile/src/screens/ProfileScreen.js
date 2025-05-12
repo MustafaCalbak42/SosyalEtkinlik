@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,11 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
+import AuthContext from '../contexts/AuthContext';
+import { CommonActions } from '@react-navigation/native';
 
 const ProfileScreen = ({ navigation }) => {
+  const { signOut } = useContext(AuthContext);
   const [user, setUser] = useState(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -52,7 +55,12 @@ const ProfileScreen = ({ navigation }) => {
           [
             {
               text: 'Tamam',
-              onPress: () => navigation.navigate('Login')
+              onPress: () => navigation.dispatch(
+                CommonActions.navigate({
+                  name: 'Auth',
+                  params: {},
+                })
+              )
             }
           ]
         );
@@ -114,13 +122,22 @@ const ProfileScreen = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.auth.logout();
+              // Token'ları temizle
               await AsyncStorage.removeItem('token');
               await AsyncStorage.removeItem('refreshToken');
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
+              
+              // AuthContext üzerinden signOut çağır
+              await signOut();
+              
+              console.log('Logging out... Navigating to Auth screen');
+              
+              // Ana navigatör üzerinden Auth ekranına yönlendir
+              navigation.dispatch(
+                CommonActions.navigate({
+                  name: 'Auth',
+                  params: {},
+                })
+              );
             } catch (err) {
               console.error('Çıkış yapma hatası:', err);
               Alert.alert('Hata', 'Çıkış yapılırken bir hata oluştu');

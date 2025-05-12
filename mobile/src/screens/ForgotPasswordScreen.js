@@ -59,9 +59,19 @@ const ForgotPasswordScreen = ({ navigation }) => {
     } catch (err) {
       console.error('Forgot password error:', err);
       
-      // Güvenlik nedeniyle hata olsa bile başarılı mesajı gösteriyoruz
-      // Bu aynı zamanda API'nin verdiği 404 hatalarını da işler
-      // Burada, kullanıcı bulunamadıysa bile e-postanın gönderilmiş gibi gösterilmesi gerekir
+      // Bağlantı hatası kontrolü
+      if (err.message && (
+        err.message.includes('timeout') || 
+        err.message.includes('Network Error') ||
+        err.message.includes('Sunucuya bağlanılamıyor') ||
+        err.message.includes('ECONNABORTED')
+      )) {
+        // Gerçek bir ağ hatası var, kullanıcıya hata mesajı göster
+        setError('Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı ve backend sunucusunun çalıştığından emin olun.');
+        return;
+      }
+      
+      // Güvenlik nedeniyle diğer hatalar için (404 gibi) başarılı mesajı göster
       setSuccess(true);
       setTimeout(() => {
         navigation.navigate('VerifyResetCode', { email });

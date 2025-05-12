@@ -6,8 +6,27 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API temel URL - mobil ve backend aynı ağda olmalı
-const BASE_URL = 'http://192.168.136.133:5000/api'; // Backend'in çalıştığı bilgisayarın IP adresi
+// Ortama göre API URL ayarla
+const getApiBaseUrl = () => {
+  // Test ortamında çalışıyorsa backend'i doğrudan localhost adresinden kullan
+  if (__DEV__) {
+    // Expo Go'da çalışıyorsa backend IP'sini kullan - bunu kendi IP adresinizle güncelleyin
+    // Açıklama: Expo Go içinde "localhost" emülatörün kendisini ifade eder, backend'i değil
+    
+    // ÖNEMLİ: BURADA KENDİ YEREL IP ADRESİNİZİ GİRİN
+    // Windows'ta ipconfig, MacOS/Linux'ta ifconfig komutları ile IP adresinizi öğrenebilirsiniz
+    // Örnek: 192.168.1.5, 192.168.0.100, vb.
+    const BACKEND_IP = '10.196.204.140';
+    const BACKEND_PORT = '5000';
+    return `http://${BACKEND_IP}:${BACKEND_PORT}/api`;
+  }
+  
+  // Prodüksiyonda HTTPS ile gerçek sunucu adresini kullan
+  return 'https://api.sosyaletkinlik.com/api';
+};
+
+// API temel URL'ini ayarla
+const BASE_URL = getApiBaseUrl();
 
 console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
 
@@ -18,10 +37,14 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  timeout: 30000, // 30 saniye
+  timeout: 30000, // 30 saniye (timeout süresini artırdım)
   validateStatus: function (status) {
     return status >= 200 && status < 500;
-  }
+  },
+  // Proxy ayarlarını devre dışı bırak (bazı ağlarda sorun çıkarabilir)
+  proxy: false,
+  // Bağlantı sorunlarını tespit etmek için daha fazla bilgi
+  maxRedirects: 5
 });
 
 // İstek engelleme (interceptors)
@@ -47,14 +70,30 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // Hata detaylarını loglayalım
     console.error('API Yanıt Hatası:', error.config?.url, error.message);
+    console.error('Detaylı hata:', JSON.stringify({
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      code: error.code,
+      message: error.message
+    }, null, 2));
     
+    // Timeout hatası
     if (error.code === 'ECONNABORTED') {
-      throw new Error('Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı ve IP adresini kontrol edin.');
+      console.log('TIMEOUT HATASI: API sunucusu yanıt vermiyor');
+      throw new Error(`Sunucu yanıt vermiyor (${BASE_URL}). Lütfen backend sunucusunun çalıştığından ve IP adresinin doğru olduğundan emin olun.`);
     }
     
+    // Ağ hatası
     if (error.message === 'Network Error') {
-      throw new Error('Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı ve IP adresini kontrol edin.');
+      console.log('NETWORK ERROR: Ağ bağlantısı kurulamadı');
+      throw new Error(`Ağ hatası. Lütfen: 
+        1) İnternet bağlantınızı kontrol edin
+        2) IP adresinin doğru olduğunu kontrol edin (${BASE_URL})
+        3) Backend sunucunun çalıştığından emin olun
+        4) Mobil cihaz ve backend sunucunun aynı ağda olduğunu doğrulayın`);
     }
     
     const originalRequest = error.config;
@@ -133,6 +172,7 @@ const api = {
   
   // Etkinlikler
   events: {
+    getEvents: () => apiClient.get('/events'),
     getAll: (params) => apiClient.get('/events', { params }),
     getById: (id) => apiClient.get(`/events/${id}`),
     create: (eventData) => apiClient.post('/events', eventData),
@@ -157,6 +197,13 @@ const api = {
     getProfile: () => apiClient.get('/users/profile'),
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
     changePassword: (passwordData) => apiClient.post('/users/change-password', passwordData),
+  },
+  
+  // Kullanıcılar (çoğul)
+  users: {
+    getRecommendedUsers: () => apiClient.get('/users/recommended'),
+    follow: (userId) => apiClient.put(`/users/follow/${userId}`),
+    unfollow: (userId) => apiClient.put(`/users/unfollow/${userId}`),
   }
 };
 
