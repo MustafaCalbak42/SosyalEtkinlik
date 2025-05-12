@@ -21,11 +21,13 @@ import CategoryFilter from '../components/CategoryFilter';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import AuthContext from '../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
   const { userProfile } = useAuth();
+  const { signOut } = React.useContext(AuthContext);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -196,10 +198,12 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
-  const handleLogin = () => {
-    navigation.navigate('AuthNavigator', {
-      screen: 'Login'
-    });
+  const handleLogin = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Login navigation error:', error);
+    }
   };
 
   return (

@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
+import { TouchableOpacity } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
+import AuthContext from '../contexts/AuthContext';
 
 // Ekranlar
 import ProfileScreen from '../screens/ProfileScreen';
@@ -9,10 +12,32 @@ import HomeScreen from '../screens/HomeScreen';
 // Tab Navigator oluştur
 const Tab = createBottomTabNavigator();
 
-const MainNavigator = () => {
+const MainNavigator = ({ navigation }) => {
+  const { signOut } = useContext(AuthContext);
+  
+  // Logout fonksiyonu
+  const handleLogout = async () => {
+    try {
+      // Önce AuthContext'i kullanarak oturumu sonlandır
+      await signOut();
+      
+      console.log('Logging out... Navigating to Auth screen');
+      
+      // Navigasyon yapılandırmasına göre Login ekranına yönlendir
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Auth',
+          params: {},
+        })
+      );
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+  
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         tabBarActiveTintColor: '#1976d2',
         tabBarInactiveTintColor: '#777',
         tabBarStyle: {
@@ -30,7 +55,7 @@ const MainNavigator = () => {
           fontWeight: 'bold',
         },
         headerTitleAlign: 'center',
-      }}
+      })}
     >
       <Tab.Screen
         name="Home"
@@ -49,6 +74,14 @@ const MainNavigator = () => {
           title: 'Profilim',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="person" color={color} size={size} />
+          ),
+          headerRight: () => (
+            <TouchableOpacity
+              style={{ marginRight: 15 }}
+              onPress={handleLogout}
+            >
+              <MaterialIcons name="exit-to-app" size={24} color="#fff" />
+            </TouchableOpacity>
           ),
         }}
       />

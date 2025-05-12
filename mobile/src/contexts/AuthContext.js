@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const loadStoredAuth = async () => {
       try {
-        const token = await AsyncStorage.getItem('userToken');
+        const token = await AsyncStorage.getItem('token');
         if (token) {
           setUserToken(token);
           setIsLoggedIn(true);
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
       const response = await apiClient.auth.login(email, password);
       const { token, user } = response.data;
       
-      await AsyncStorage.setItem('userToken', token);
+      await AsyncStorage.setItem('token', token);
       apiClient.setAuthToken(token);
       
       setUserToken(token);
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('token');
       apiClient.removeAuthToken();
       setUserToken(null);
       setUserProfile(null);

@@ -5,6 +5,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoLinking from 'expo-linking';
 import { createStackNavigator } from '@react-navigation/stack';
 
+// Context
+import AuthContext from '../contexts/AuthContext';
+
 // Navigatörler
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
@@ -26,10 +29,17 @@ const AppNavigator = ({ linking }) => {
     ],
     config: {
       screens: {
-        AuthNavigator: {
+        Main: {
+          screens: {
+            Home: 'home',
+            Profile: 'profile',
+          }
+        },
+        Auth: {
           screens: {
             Login: 'login',
             Register: 'register',
+            ForgotPassword: 'forgot-password',
             EmailVerified: {
               path: 'email-verified',
               parse: {
@@ -41,12 +51,6 @@ const AppNavigator = ({ linking }) => {
                 message: (message) => message
               }
             }
-          }
-        },
-        MainNavigator: {
-          screens: {
-            Home: 'home',
-            Profile: 'profile',
           }
         }
       }
@@ -87,8 +91,13 @@ const AppNavigator = ({ linking }) => {
     // Uygulama başladığında token kontrolü
     const bootstrapAsync = async () => {
       try {
-        // Her zaman login ekranını göster
-        setUserToken(null);
+        // AsyncStorage'dan token'ı al
+        // LoginScreen'de 'token' olarak kaydedildiği için aynı key'i kullanıyoruz
+        const token = await AsyncStorage.getItem('token');
+        console.log('Stored token:', token ? 'Found' : 'Not found');
+        
+        // Token varsa kullanıcı oturum açmış demektir
+        setUserToken(token); // Token varsa değeri atanır, yoksa null kalır
       } catch (e) {
         console.error('Token kontrolü sırasında hata:', e);
       } finally {
@@ -126,20 +135,42 @@ const AppNavigator = ({ linking }) => {
     () => ({
       signIn: async (token, refreshToken) => {
         try {
+          console.log('Signing in with token:', token ? 'Token exists' : 'No token');
+          
+          // Önce token'ı AsyncStorage'a kaydet
           await AsyncStorage.setItem('token', token);
+          
           if (refreshToken) {
             await AsyncStorage.setItem('refreshToken', refreshToken);
           }
+          
+          // Sonra state'i güncelle - bu navigasyonu tetikleyecek
           setUserToken(token);
+          
+          console.log('Sign-in complete, user token set');
+          return true;
         } catch (e) {
           console.error('Token kaydedilirken hata:', e);
+          return false;
         }
       },
       signOut: async () => {
         try {
+          console.log('Logging out...');
           await AsyncStorage.removeItem('token');
           await AsyncStorage.removeItem('refreshToken');
           await AsyncStorage.removeItem('user');
+          setUserToken(null);
+        } catch (e) {
+          console.error('Çıkış yapılırken hata:', e);
+        }
+      },
+      logout: async () => {
+        try {
+          console.log('Logging out from everywhere...');
+          await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('refreshToken');
+          await AsyncStorage.removeItem('user'); 
           setUserToken(null);
         } catch (e) {
           console.error('Çıkış yapılırken hata:', e);
@@ -158,20 +189,24 @@ const AppNavigator = ({ linking }) => {
   }
 
   return (
-    <NavigationContainer linking={linkingConfig}>
-      <StatusBar backgroundColor="#1976d2" barStyle="light-content" />
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {userToken ? (
-          <Stack.Screen name="MainNavigator" component={MainNavigator} />
-        ) : (
-          <Stack.Screen 
-            name="AuthNavigator" 
-            component={AuthNavigator}
-            options={{ headerShown: false }}
-          />
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthContext.Provider value={authContext}>
+      <NavigationContainer linking={linkingConfig}>
+        <StatusBar backgroundColor="#1976d2" barStyle="light-content" />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {userToken ? (
+            <Stack.Screen name="Main" component={MainNavigator} />
+          ) : (
+            <Stack.Screen 
+              name="Auth" 
+              component={AuthNavigator}
+              options={{
+                animationEnabled: true,
+              }}
+            />
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </AuthContext.Provider>
   );
 };
 
