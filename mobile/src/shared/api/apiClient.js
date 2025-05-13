@@ -10,15 +10,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const getApiBaseUrl = () => {
   // Test ortamında çalışıyorsa backend'i doğrudan localhost adresinden kullan
   if (__DEV__) {
-    // Expo Go'da çalışıyorsa backend IP'sini kullan - bunu kendi IP adresinizle güncelleyin
-    // Açıklama: Expo Go içinde "localhost" emülatörün kendisini ifade eder, backend'i değil
+    const debugMode = true; // Hata ayıklama modunu etkinleştir
     
-    // ÖNEMLİ: BURADA KENDİ YEREL IP ADRESİNİZİ GİRİN
-    // Windows'ta ipconfig, MacOS/Linux'ta ifconfig komutları ile IP adresinizi öğrenebilirsiniz
-    // Örnek: 192.168.1.5, 192.168.0.100, vb.
-    const BACKEND_IP = '10.196.204.140';
+    // Tüm olası IP'leri dene
+    const ipAddresses = [
+      '10.196.204.140', // WiFi IP
+      '192.168.137.1',  // Ethernet IP
+      'localhost',      // Localhost
+      '127.0.0.1'       // Loopback
+    ];
+    
     const BACKEND_PORT = '5000';
-    return `http://${BACKEND_IP}:${BACKEND_PORT}/api`;
+    
+    // Debug modu aktifse tüm olası IP'leri konsola yazdır
+    if (debugMode) {
+      console.log("DEBUG: Olası API URL'leri:");
+      ipAddresses.forEach(ip => {
+        console.log(`DEBUG: http://${ip}:${BACKEND_PORT}/api`);
+      });
+    }
+    
+    // Ana IP adresi olarak WiFi IP'sini kullan
+    const mainUrl = `http://10.0.2.2:${BACKEND_PORT}/api`;
+    console.log("Bağlanılacak API URL:", mainUrl);
+    return mainUrl;
   }
   
   // Prodüksiyonda HTTPS ile gerçek sunucu adresini kullan
@@ -30,6 +45,24 @@ const BASE_URL = getApiBaseUrl();
 
 console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
 
+// Token yönetimi için yardımcı fonksiyonlar
+let authToken = null;
+
+// Token ekle/kaldır fonksiyonları
+const setAuthToken = (token) => {
+  authToken = token;
+  if (token) {
+    console.log('API token ayarlandı');
+  } else {
+    console.log('API token kaldırıldı');
+  }
+};
+
+const removeAuthToken = () => {
+  authToken = null;
+  console.log('API token kaldırıldı');
+};
+
 // Axios instance oluştur
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -37,14 +70,17 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  timeout: 30000, // 30 saniye (timeout süresini artırdım)
+  timeout: 10000, // 10 saniye (daha kısa timeout, daha hızlı hata tespiti)
   validateStatus: function (status) {
     return status >= 200 && status < 500;
   },
   // Proxy ayarlarını devre dışı bırak (bazı ağlarda sorun çıkarabilir)
   proxy: false,
   // Bağlantı sorunlarını tespit etmek için daha fazla bilgi
-  maxRedirects: 5
+  maxRedirects: 5,
+  // Yeniden deneme stratejisi
+  retry: 3,
+  retryDelay: 1000
 });
 
 // İstek engelleme (interceptors)
@@ -126,8 +162,12 @@ apiClient.interceptors.response.use(
   }
 );
 
-// API Fonksiyonları
+// Dışa açılan API
 const api = {
+  // Token yönetimi yardımcı fonksiyonları 
+  setAuthToken,
+  removeAuthToken,
+  
   // Kimlik doğrulama
   auth: {
     login: (credentials) => apiClient.post('/users/login', credentials),
@@ -204,6 +244,8 @@ const api = {
     getRecommendedUsers: () => apiClient.get('/users/recommended'),
     follow: (userId) => apiClient.put(`/users/follow/${userId}`),
     unfollow: (userId) => apiClient.put(`/users/unfollow/${userId}`),
+    getCurrentUser: () => apiClient.get('/users/profile'),
+    updateProfile: (userData) => apiClient.put('/users/profile', userData),
   }
 };
 

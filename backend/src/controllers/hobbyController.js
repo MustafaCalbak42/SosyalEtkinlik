@@ -2,6 +2,7 @@ const Hobby = require('../models/Hobby');
 const User = require('../models/User');
 const Event = require('../models/Event');
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 
 // @desc    Yeni hobi oluştur
 // @route   POST /api/hobbies
@@ -39,12 +40,99 @@ const createHobby = async (req, res) => {
 // @route   GET /api/hobbies
 // @access  Public
 const getHobbies = async (req, res) => {
+  // İstek yapan client'ın kökenini (origin) ve header'larını logla
+  console.log('Hobi isteği origin:', req.headers.origin || 'origin bilgisi yok');
+  console.log('Hobi isteği referrer:', req.headers.referer || 'referrer bilgisi yok');
+  console.log('Hobi isteği user-agent:', req.headers['user-agent']);
+  
+  // Global veritabanı bağlantı durumunu kontrol et
+  if (global.dbStatus && !global.dbStatus.connected) {
+    console.error('Veritabanı bağlantısı yok! Hobiler getirilemez.');
+    return res.status(503).json({
+      success: false,
+      message: 'Veritabanı bağlantısı kurulamadı, servis geçici olarak kullanılamıyor.',
+      error: 'DB_CONNECTION_UNAVAILABLE',
+      dbStatus: global.dbStatus
+    });
+  }
+  
   try {
-    const hobbies = await Hobby.find({});
-    res.json(hobbies);
+    console.log('Hobiler getiriliyor...');
+    
+    // MongoDB bağlantısını kontrol et
+    if (mongoose.connection.readyState !== 1) {
+      console.error('MongoDB bağlantısı kurulmamış! ReadyState:', mongoose.connection.readyState);
+      return res.status(500).json({ 
+        success: false,
+        message: 'Veritabanı bağlantısı kurulmamış',
+        error: 'DB_CONNECTION_ERROR'
+      });
+    }
+    
+    // Boş bir dizi döndürmeye hazır olalım
+    let hobbies = [];
+
+    try {
+      console.log('Hobby.find() çağrılıyor...');
+      hobbies = await Hobby.find({}).sort({ category: 1, name: 1 });
+      console.log('Hobby.find() tamamlandı, bulunan hobi sayısı:', hobbies.length);
+    } catch (findError) {
+      console.error('Hobby.find() sırasında hata:', findError);
+      return res.status(500).json({ 
+        success: false,
+        message: 'Hobiler alınırken veritabanında bir hata oluştu',
+        error: 'DB_QUERY_ERROR'
+      });
+    }
+    
+    // Hobiler bulunamasa bile boş array dön
+    if (!hobbies || hobbies.length === 0) {
+      console.log('Hobi bulunamadı, boş dizi döndürülüyor.');
+      return res.json({
+        success: true,
+        message: 'Kayıtlı hobi bulunamadı',
+        data: []
+      });
+    }
+    
+    console.log(`${hobbies.length} adet hobi başarıyla getirildi`);
+    
+    // Hobilerden ilk 2 tanesinin içeriğini göster (debug için)
+    if (hobbies.length > 0) {
+      console.log('İlk hobi örneği:', JSON.stringify(hobbies[0]));
+      if (hobbies.length > 1) {
+        console.log('İkinci hobi örneği:', JSON.stringify(hobbies[1]));
+      }
+    }
+    
+    // Standart API yanıt formatını kullan
+    return res.json({
+      success: true,
+      message: 'Hobiler başarıyla getirildi',
+      data: hobbies
+    });
   } catch (error) {
     console.error('Hobileri getirme hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Hata detayı:', error.stack);
+    console.error('Hata ismi:', error.name);
+    console.error('Hata mesajı:', error.message);
+    
+    // Özel hata türleri için
+    if (error.name === 'MongoError' || error.name === 'MongoServerError') {
+      console.error('MongoDB hatası kodu:', error.code);
+      return res.status(500).json({
+        success: false,
+        message: 'Veritabanı hatası: ' + error.message,
+        error: 'DB_ERROR'
+      });
+    }
+    
+    // Genel durum için
+    return res.status(500).json({ 
+      success: false,
+      message: 'Hobiler alınırken bir hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'SERVER_ERROR'
+    });
   }
 };
 

@@ -13,23 +13,17 @@ import HomeScreen from '../screens/HomeScreen';
 const Tab = createBottomTabNavigator();
 
 const MainNavigator = ({ navigation }) => {
-  const { signOut } = useContext(AuthContext);
+  const { logout } = useContext(AuthContext);
   
   // Logout fonksiyonu
   const handleLogout = async () => {
     try {
       // Önce AuthContext'i kullanarak oturumu sonlandır
-      await signOut();
+      await logout();
       
-      console.log('Logging out... Navigating to Auth screen');
+      console.log('Logged out successfully');
       
-      // Navigasyon yapılandırmasına göre Login ekranına yönlendir
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Auth',
-          params: {},
-        })
-      );
+      // Stay on home screen, the UI will update since isLoggedIn state changed
     } catch (error) {
       console.error('Logout error:', error);
     }

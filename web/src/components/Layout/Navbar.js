@@ -33,7 +33,6 @@ import {
   LocationOn
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 
 const Navbar = () => {
   // Demo mode - auth state is mocked to always be authenticated

@@ -1,5 +1,7 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import { TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 // Ekranlar
 import LoginScreen from '../screens/LoginScreen';
@@ -30,7 +32,17 @@ const AuthNavigator = () => {
       <Stack.Screen 
         name="Login" 
         component={LoginScreen} 
-        options={{ title: 'Giriş Yap' }}
+        options={{ 
+          title: 'Giriş Yap',
+          headerLeft: (props) => (
+            <TouchableOpacity
+              onPress={() => props.navigation.goBack()}
+              style={{ marginLeft: 15 }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
       />
       <Stack.Screen 
         name="Register" 

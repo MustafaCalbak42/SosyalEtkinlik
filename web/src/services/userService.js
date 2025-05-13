@@ -149,9 +149,34 @@ export const isAuthenticated = () => {
  */
 export const getUserProfile = async () => {
   try {
-    const response = await axiosInstance.get(`${API_URL}/profile`);
+    console.log('[userService] Attempting to get user profile');
+    const token = localStorage.getItem('token');
+    console.log('[userService] Token exists:', !!token);
+    
+    // Token yoksa hata döndür
+    if (!token) {
+      console.error('[userService] No token available for getUserProfile');
+      return { success: false, message: 'No authentication token available' };
+    }
+    
+    // Manuel olarak Authorization header'ı ekle
+    const response = await axiosInstance.get(`${API_URL}/profile`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    console.log('[userService] getUserProfile response:', response.data);
     return response.data;
   } catch (error) {
+    console.error('[userService] getUserProfile error:', error.response?.data || error.message);
+    
+    // Token geçersizse temizle
+    if (error.response?.status === 401) {
+      console.warn('[userService] Clearing invalid token');
+      localStorage.removeItem('token');
+    }
+    
     throw handleError(error);
   }
 };

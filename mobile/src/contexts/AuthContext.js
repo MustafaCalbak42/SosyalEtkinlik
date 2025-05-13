@@ -50,16 +50,32 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
+  const login = async (token, refreshToken) => {
     try {
-      const response = await apiClient.auth.login(email, password);
-      const { token, user } = response.data;
+      if (!token) {
+        console.error('Login error: No token provided');
+        return { 
+          success: false,
+          message: 'Giriş yapılamadı: Token bilgisi eksik' 
+        };
+      }
       
+      // Token'ı kaydet
       await AsyncStorage.setItem('token', token);
+      
+      // RefreshToken varsa kaydet
+      if (refreshToken) {
+        await AsyncStorage.setItem('refreshToken', refreshToken);
+      }
+      
+      // API istemci için token ayarla
       apiClient.setAuthToken(token);
       
+      // Kullanıcı profili bilgilerini al
+      const profileResponse = await fetchUserProfile();
+      
+      // Oturum durumunu güncelle
       setUserToken(token);
-      setUserProfile(user);
       setIsLoggedIn(true);
       
       return { success: true };
@@ -67,7 +83,7 @@ export const AuthProvider = ({ children }) => {
       console.error('Login error:', error);
       return {
         success: false,
-        message: error.response?.data?.message || 'Login failed'
+        message: error.message || 'Login failed'
       };
     }
   };
@@ -121,6 +137,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        setIsLoggedIn,
         updateProfile,
         refreshUserProfile: fetchUserProfile
       }}

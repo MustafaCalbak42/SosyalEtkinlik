@@ -3,8 +3,7 @@ import {
   Box, 
   Typography, 
   Divider, 
-  Avatar, 
-  Chip
+  Avatar
 } from '@mui/material';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';

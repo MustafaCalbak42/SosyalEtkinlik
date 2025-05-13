@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
   View, 
   Text, 
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
+import AuthContext from '../contexts/AuthContext';
 import apiClient from '../shared/api/apiClient';
 import EventCard from '../components/EventCard';
 import { theme } from '../styles/theme';
@@ -21,13 +22,12 @@ import CategoryFilter from '../components/CategoryFilter';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import AuthContext from '../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
   const { userProfile } = useAuth();
-  const { signOut } = React.useContext(AuthContext);
+  const { signOut } = useContext(AuthContext);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -198,12 +198,12 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
-  const handleLogin = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Login navigation error:', error);
-    }
+  const navigateToLogin = () => {
+    // Directly navigate to the Auth stack
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Auth' }],
+    });
   };
 
   return (
@@ -224,14 +224,28 @@ const HomeScreen = ({ navigation }) => {
             {!userProfile ? (
               <TouchableOpacity 
                 style={styles.loginButton}
-                onPress={handleLogin}
+                onPress={navigateToLogin}
               >
                 <Text style={styles.loginButtonText}>Giriş Yap</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.profileButton}>
-                <Ionicons name="person-circle-outline" size={32} color="#fff" />
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                <TouchableOpacity 
+                  style={styles.headerButton}
+                  onPress={() => navigation.navigate('Profile')}
+                >
+                  <Ionicons name="person" size={20} color="#fff" />
+                  <Text style={styles.headerButtonText}>Profil</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.headerButton}
+                  onPress={() => signOut()}
+                >
+                  <Ionicons name="log-out" size={20} color="#fff" />
+                  <Text style={styles.headerButtonText}>Çıkış</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>
@@ -618,6 +632,25 @@ const styles = StyleSheet.create({
   },
   eventsContainer: {
     padding: 16,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 4,
   },
 });
 

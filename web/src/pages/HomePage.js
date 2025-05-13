@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, Divider } from '@mui/material';
+import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { Search as SearchIcon, LocationOn, Event, People, Chat, Category } from '@mui/icons-material';
+import { Search as SearchIcon, LocationOn, Event, People, Category } from '@mui/icons-material';
 import Navbar from '../components/Layout/Navbar';
 import EventCard from '../components/Events/EventCard';
 import CategoryFilter from '../components/Events/CategoryFilter';
 import RecommendedUsers from '../components/Users/RecommendedUsers';
 import UpcomingEvents from '../components/Events/UpcomingEvents';
+import CreateEventForm from '../components/Events/CreateEventForm';
+import { useAuth } from '../context/AuthContext';
+import { getAllEvents } from '../services/eventService';
 
-// Mock data for events
+// Mock data for events (fallback only)
 const mockEvents = [
   {
     id: 1,
@@ -89,14 +92,125 @@ const HeroSection = styled(Box)(({ theme }) => ({
 function HomePage() {
   const [tabValue, setTabValue] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState('Tümü');
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [createEventOpen, setCreateEventOpen] = useState(false);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const fetchEvents = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      console.log('[HomePage] Fetching events from server...');
+      const result = await getAllEvents();
+      
+      if (result.success && result.data) {
+        console.log('[HomePage] Successfully loaded events:', result.data.length);
+        setEvents(result.data);
+      } else {
+        console.error('[HomePage] Failed to load events:', result.message);
+        setError('Etkinlikler yüklenirken bir hata oluştu: ' + result.message);
+        // Veri gelmezse mock verileri kullan
+        setEvents(mockEvents);
+      }
+    } catch (error) {
+      console.error('[HomePage] Error loading events:', error);
+      setError('Etkinlikler yüklenirken bir hata oluştu');
+      setEvents(mockEvents);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
 
+  const handleCreateEventOpen = () => {
+    setCreateEventOpen(true);
+  };
+
+  const handleCreateEventClose = (refresh = false) => {
+    setCreateEventOpen(false);
+    if (refresh) {
+      fetchEvents();
+    }
+  };
+
   const filteredEvents = selectedCategory === 'Tümü' 
-    ? mockEvents 
-    : mockEvents.filter(event => event.category === selectedCategory);
+    ? events 
+    : events.filter(event => {
+        // Hobby'nin kategori bilgisini kontrol et
+        if (event.hobby && typeof event.hobby === 'object') {
+          return event.hobby.category === selectedCategory;
+        }
+        // Eğer event.category varsa (mock data için)
+        return event.category === selectedCategory;
+      });
+
+  // Event ID veya _id alanına göre key oluştur
+  const getEventKey = (event) => {
+    return event._id || event.id || Math.random().toString(36).substring(7);
+  };
+
+  // Etkinlik konumu için formatla
+  const formatEventLocation = (event) => {
+    if (event.location) {
+      if (typeof event.location === 'string') {
+        return event.location;
+      }
+      if (typeof event.location === 'object' && event.location.address) {
+        return event.location.address;
+      }
+    }
+    return 'Konum belirtilmemiş';
+  };
+
+  // Katılımcı sayısı ve maksimum sayısını formatla
+  const getAttendeeInfo = (event) => {
+    // API'den gelen format
+    if (event.participants && event.maxParticipants) {
+      return {
+        attendees: event.participants.length,
+        maxAttendees: event.maxParticipants
+      };
+    }
+    // Mock data format
+    if (event.attendees !== undefined && event.maxAttendees !== undefined) {
+      return {
+        attendees: event.attendees,
+        maxAttendees: event.maxAttendees
+      };
+    }
+    // Varsayılan
+    return {
+      attendees: 0,
+      maxAttendees: 10
+    };
+  };
+
+  // Kategori bilgisini formatla
+  const getEventCategory = (event) => {
+    if (event.hobby && typeof event.hobby === 'object') {
+      return event.hobby.category;
+    }
+    return event.category || 'Diğer';
+  };
+
+  // Etkinlik görsel URL'si formatla
+  const getEventImage = (event) => {
+    if (event.image) {
+      return event.image;
+    }
+    // Burada varsayılan bir resim URL'si döndürebilirsiniz
+    return 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60';
+  };
 
   return (
     <>
@@ -113,6 +227,7 @@ function HomePage() {
             variant="contained" 
             color="secondary"
             size="large"
+            onClick={handleCreateEventOpen}
             sx={{ 
               backgroundColor: 'white', 
               color: '#1976d2', 
@@ -164,15 +279,36 @@ function HomePage() {
                 {selectedCategory === 'Tümü' ? 'Öne Çıkan Etkinlikler' : `${selectedCategory} Etkinlikleri`}
               </Typography>
               
-              <Grid container spacing={3}>
-                {filteredEvents.map(event => (
-                  <Grid item xs={12} sm={6} key={event.id}>
-                    <EventCard event={event} />
-                  </Grid>
-                ))}
-              </Grid>
+              {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : error ? (
+                <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
+                  {error}
+                </Paper>
+              ) : (
+                <Grid container spacing={3}>
+                  {filteredEvents.map(event => (
+                    <Grid item xs={12} sm={6} key={getEventKey(event)}>
+                      <EventCard 
+                        event={{
+                          ...event,
+                          title: event.title,
+                          description: event.description,
+                          image: getEventImage(event),
+                          date: event.startDate || event.date,
+                          location: formatEventLocation(event),
+                          ...getAttendeeInfo(event),
+                          category: getEventCategory(event)
+                        }} 
+                      />
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
               
-              {filteredEvents.length === 0 && (
+              {!loading && !error && filteredEvents.length === 0 && (
                 <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
                   <Typography>
                     Bu kategoride şu anda etkinlik bulunmuyor.
@@ -181,6 +317,7 @@ function HomePage() {
                     variant="contained" 
                     color="primary" 
                     sx={{ mt: 2 }}
+                    onClick={handleCreateEventOpen}
                   >
                     Etkinlik Oluştur
                   </Button>
@@ -251,6 +388,12 @@ function HomePage() {
             </Paper>
           </Grid>
         </Grid>
+        
+        {/* Etkinlik oluşturma modalı */}
+        <CreateEventForm 
+          open={createEventOpen} 
+          onClose={handleCreateEventClose} 
+        />
       </Container>
     </>
   );
