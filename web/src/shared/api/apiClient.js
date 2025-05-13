@@ -6,7 +6,7 @@
 import axios from 'axios';
 
 // API temel URL (web ve mobil için ortak)
-let BASE_URL = 'http://localhost:5000/api';
+let BASE_URL = 'http://localhost:5001/api';
 
 // Platform bazlı konfigürasyon
 if (process.env.REACT_APP_API_URL) {
@@ -16,6 +16,8 @@ if (process.env.REACT_APP_API_URL) {
   // React Native (Expo) için
   BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 }
+
+console.log('Web API URL:', BASE_URL);
 
 // Axios instance oluştur
 const apiClient = axios.create({

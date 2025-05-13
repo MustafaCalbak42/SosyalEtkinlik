@@ -35,6 +35,7 @@
         "projectId": "sosyal-etkinlik"
       }
     },
-    "owner": "sosyaletkinlik"
+    "owner": "sosyaletkinlik",
+    "hostUri": "10.196.204.140"
   }
 } 

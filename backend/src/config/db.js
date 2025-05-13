@@ -7,6 +7,12 @@ const connectDB = async () => {
     // MongoDB URI'yi çevre değişkeninden al
     const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://clbkmustafa123:427626Clbk.@sosyaletkinlikcluster.a42w5.mongodb.net/sosyaletkinlik?retryWrites=true&w=majority';
     
+    // Bağlantı URI'sini kontrol et
+    if (!mongoURI) {
+      throw new Error('MongoDB URI tanımlanmamış!');
+    }
+    
+    // Şifreyi gizlenerek URI'yi göster
     console.log(`MongoDB URI: ${mongoURI.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:****@')}`);
     
     const conn = await mongoose.connect(mongoURI, {
@@ -26,6 +32,7 @@ const connectDB = async () => {
     console.log(`🔍 Hata: ${error.message}`);
     
     // Hassas bilgileri gizleyerek bağlantı bilgisini yazdır
+    const mongoURI = process.env.MONGODB_URI || '';
     const safeUri = mongoURI
       ? mongoURI.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:****@')
       : 'Tanımlanmamış';

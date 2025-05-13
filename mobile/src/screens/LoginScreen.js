@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,13 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import api from '../shared/api/apiClient';
-import AuthContext from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = ({ navigation, route }) => {
-  const { signIn } = useContext(AuthContext);
+  const { login, setIsLoggedIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -64,60 +64,58 @@ const LoginScreen = ({ navigation, route }) => {
     try {
       console.log('Login attempt with:', { email });
       
+      // API üzerinden login işlemi yap
       const response = await api.auth.login({
         email,
         password
       });
       
-      console.log('Login response:', response.status, response.data);
+      console.log('Login response:', response.data);
       
-      if (response.data && response.data.success && response.data.data && response.data.data.token) {
-        console.log('Login successful, saving token and redirecting');
+      // API yanıtını kontrol et
+      if (response.data && response.data.success) {
+        // API başarılı yanıt verdi
+        const { token, refreshToken } = response.data.data;
         
-        // Token'ları AsyncStorage'a kaydet
-        const token = response.data.data.token;
-        const refreshToken = response.data.data.refreshToken;
-        
-        await AsyncStorage.setItem('token', token);
-        
-        if (refreshToken) {
-          await AsyncStorage.setItem('refreshToken', refreshToken);
+        if (token) {
+          try {
+            // AuthContext login fonksiyonunu çağır
+            await login(token, refreshToken);
+            
+            // Anasayfaya git (AppNavigator otomatik yönlendirecek)
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Main' }],
+            });
+          } catch (storageError) {
+            console.error('Token storage error:', storageError);
+            setError('Oturum bilgileri kaydedilirken bir hata oluştu');
+          }
+        } else {
+          setError('Sunucu geçerli bir token döndürmedi');
         }
-        
-        // AuthContext'in signIn metodunu çağır
-        await signIn(token, refreshToken);
-        
-        console.log('Login successful, signed in, navigating to Main');
-        
-        // Anasayfaya yönlendirme, AuthContext signIn işlemi sonrası AppNavigator
-        // otomatik olarak yönlendirme yapacak
       } else {
-        console.log('Login failed - no token in response');
+        // API başarısız yanıt verdi
         setError(response.data?.message || 'Giriş yapılamadı. Lütfen bilgilerinizi kontrol edin.');
+        
+        // E-posta doğrulama mesajı varsa
+        if (response.data?.message && (response.data.message.includes('e-posta adresinizi doğrulayın') || 
+            response.data.message.includes('e-posta doğrulama'))) {
+          setNeedsVerification(true);
+          setVerificationEmail(email);
+        }
       }
     } catch (error) {
-      console.error('Login error:', error.response?.data || error.message);
+      console.error('Login error:', error);
       
-      // API hatalarını kullanıcıya gösterme
-      if (error.response?.status === 404) {
-        setError('Sunucuya ulaşılamıyor. Lütfen internet bağlantınızı kontrol edin.');
-      } else if (error.response?.status === 401) {
+      if (error.response?.status === 400) {
         setError('E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol edin.');
-      } else if (error.response?.data?.message && 
-          (error.response.data.message.includes('e-posta adresinizi doğrulayın') || 
-           error.response.data.message.includes('e-posta doğrulama'))) {
-        setError(error.response.data.message);
+      } else if (error.response?.status === 403 && error.response?.data?.message?.includes('doğrula')) {
+        setError('Lütfen e-posta adresinizi doğrulayın.');
         setNeedsVerification(true);
         setVerificationEmail(email);
-      } else if (error.message.includes('Sunucu yanıt vermiyor')) {
-        // Timeout hatası - daha kullanıcı dostu bir mesaj göster
-        setError('Backend sunucuya bağlanılamıyor. Lütfen yöneticinize başvurun.');
-        console.log('SUNUCU BAĞLANTI HATASI. IP adresi ve port numarasını kontrol edin.');
-      } else if (error.message.includes('Ağ hatası')) {
-        // Ağ hatası - kullanıcıya yardımcı olacak bilgiler
-        setError('İnternet bağlantısı sorunu veya sunucu çalışmıyor. Lütfen bağlantınızı kontrol edin.');
       } else {
-        setError(error.response?.data?.message || error.message || 'Bir hata oluştu. Lütfen tekrar deneyin.');
+        setError('Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.');
       }
     } finally {
       setLoading(false);
@@ -165,6 +163,12 @@ const LoginScreen = ({ navigation, route }) => {
     >
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.logoContainer}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
           <Text style={styles.logoText}>Sosyal Etkinlik</Text>
         </View>
         
@@ -385,6 +389,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    padding: 10,
   },
 });
 

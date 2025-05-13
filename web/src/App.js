@@ -5,6 +5,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 
 // Context
 import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/AuthContext';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -19,13 +20,26 @@ import HomePage from './pages/HomePage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
-  // localStorage'dan token kontrolü
-  const isAuthenticated = localStorage.getItem('token') !== null;
+  // AuthContext ve localStorage'dan token kontrolü
+  const { user, loading, authChecked } = useAuth();
+  const token = localStorage.getItem('token');
   
-  if (!isAuthenticated) {
+  console.log('[ProtectedRoute] Auth state:', { user: !!user, token: !!token, loading, authChecked });
+  
+  // Eğer authentication henüz kontrol edilmediyse yükleniyor göster
+  if (loading && !authChecked) {
+    console.log('[ProtectedRoute] Still loading authentication status');
+    return <div>Yükleniyor...</div>;
+  }
+  
+  // Değilse, token kontrolü yap
+  if (!token) {
+    console.log('[ProtectedRoute] No token found, redirecting to login');
     return <Navigate to="/login" />;
   }
   
+  // Hem token hem de user nesnesi varsa, korumalı içeriği göster
+  console.log('[ProtectedRoute] Token found, rendering protected content');
   return children;
 };
 

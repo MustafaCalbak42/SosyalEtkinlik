@@ -7,9 +7,20 @@ const { validationResult } = require('express-validator');
 // @route   POST /api/events
 // @access  Private
 const createEvent = async (req, res) => {
+  console.log('Etkinlik oluşturma isteği alındı:', {
+    headers: req.headers,
+    body: req.body,
+    userId: req.user?.id
+  });
+  
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    console.error('Validasyon hataları:', errors.array());
+    return res.status(400).json({ 
+      success: false,
+      message: 'Geçersiz form verileri',
+      errors: errors.array() 
+    });
   }
 
   try {
@@ -25,11 +36,52 @@ const createEvent = async (req, res) => {
       price,
       requirements
     } = req.body;
+    
+    console.log('İşlenecek etkinlik verileri:', {
+      title, hobby, 
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+      organizer: req.user.id
+    });
+
+    // Organizatör bilgilerini kontrol et
+    if (!req.user || !req.user.id) {
+      console.error('Kullanıcı kimliği bulunamadı');
+      return res.status(401).json({ 
+        success: false,
+        message: 'Kullanıcı kimliği doğrulanamadı' 
+      });
+    }
 
     // Hobi ID'sinin geçerli olup olmadığını kontrol et
-    const hobbyExists = await Hobby.findById(hobby);
-    if (!hobbyExists) {
-      return res.status(404).json({ message: 'Geçersiz hobi ID\'si' });
+    try {
+      const hobbyExists = await Hobby.findById(hobby);
+      if (!hobbyExists) {
+        console.error('Hobi bulunamadı, ID:', hobby);
+        return res.status(404).json({
+          success: false,
+          message: 'Geçersiz hobi ID\'si'
+        });
+      }
+      console.log('Hobi doğrulandı:', hobbyExists.name);
+    } catch (hobbyError) {
+      console.error('Hobi kontrolü sırasında hata:', hobbyError);
+      return res.status(400).json({
+        success: false,
+        message: 'Hobi ID\'si geçersiz format'
+      });
+    }
+
+    // Tarih formatları kontrolü
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      console.error('Geçersiz tarih formatı:', { startDate, endDate });
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz tarih formatı'
+      });
     }
 
     // Etkinlik oluştur
@@ -39,31 +91,47 @@ const createEvent = async (req, res) => {
       organizer: req.user.id,
       hobby,
       location,
-      startDate,
-      endDate,
-      maxParticipants,
+      startDate: startDateObj,
+      endDate: endDateObj,
+      maxParticipants: parseInt(maxParticipants) || 10,
       tags: tags || [],
-      price: price || 0,
+      price: parseFloat(price) || 0,
       requirements: requirements || []
     });
 
+    console.log('Oluşturulacak etkinlik modeli:', event);
+
     // Etkinliği kaydet
     const createdEvent = await event.save();
+    console.log('Etkinlik başarıyla oluşturuldu, ID:', createdEvent._id);
 
     // Hobi modelinde etkinliği kaydet
     await Hobby.findByIdAndUpdate(hobby, {
       $push: { events: createdEvent._id }
     });
+    console.log('Etkinlik hobiye eklendi');
 
     // Organizatörün etkinliklerini güncelle
     await User.findByIdAndUpdate(req.user.id, {
       $push: { events: createdEvent._id }
     });
+    console.log('Etkinlik organizatörün etkinlik listesine eklendi');
 
-    res.status(201).json(createdEvent);
+    // Standart API yanıt formatını kullan
+    res.status(201).json({
+      success: true,
+      message: 'Etkinlik başarıyla oluşturuldu',
+      data: createdEvent
+    });
   } catch (error) {
     console.error('Etkinlik oluşturma hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Hata detayı:', error.stack);
+    
+    return res.status(500).json({ 
+      success: false,
+      message: 'Etkinlik oluşturulurken bir hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'SERVER_ERROR'
+    });
   }
 };
 

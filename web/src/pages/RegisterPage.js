@@ -37,7 +37,6 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { registerUser } from '../services/userService';
 import { getAllHobbies } from '../services/hobbyService';
-import { HOBBY_CATEGORIES } from '../shared/constants/appConstants';
 
 // Şehirler listesi
 const CITIES = [
@@ -72,10 +71,32 @@ const RegisterPage = () => {
     const fetchHobbies = async () => {
       setLoadingHobbies(true);
       try {
+        console.log('RegisterPage: Hobiler yükleniyor...');
         const response = await getAllHobbies();
-        setHobbies(response);
+        console.log('RegisterPage: Hobiler yüklendi:', Array.isArray(response) ? response.length : 'array değil', response);
+        
+        // Eğer yanıt diziyse kullan, değilse boş dizi kullan
+        if (Array.isArray(response)) {
+          setHobbies(response);
+        } else {
+          console.warn('RegisterPage: Hobiler dizi biçiminde değil, boş dizi kullanılıyor');
+          setHobbies([]);
+        }
       } catch (err) {
-        console.error('Hobiler yüklenirken hata:', err);
+        console.error('RegisterPage: Hobiler yüklenirken hata:', err);
+        // Hata durumunda boş bir dizi kullan
+        console.warn('RegisterPage: Hobiler yüklenemedi, boş dizi kullanılıyor');
+        setHobbies([]);
+        
+        // Statik test hobilerini kullan (geçici çözüm)
+        setHobbies([
+          { _id: 'test1', name: 'Futbol', category: 'Spor' },
+          { _id: 'test2', name: 'Resim', category: 'Sanat' },
+          { _id: 'test3', name: 'Yüzme', category: 'Spor' },
+          { _id: 'test4', name: 'Müzik', category: 'Müzik' },
+          { _id: 'test5', name: 'Dans', category: 'Dans' },
+          { _id: 'test6', name: 'Yemek Yapma', category: 'Yemek' }
+        ]);
       } finally {
         setLoadingHobbies(false);
       }

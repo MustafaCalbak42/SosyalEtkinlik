@@ -21,28 +21,18 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: [
-    process.env.CLIENT_URL_WEB || 'http://localhost:3000',
-    process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000',
-    'http://localhost:19000',
-    'http://localhost:19006',
-    'exp://localhost:19000',
-    'exp://localhost:19006',
-    'http://192.168.136.133:5000',
-    'http://192.168.136.133:3000',
-    'http://192.168.136.133:19000',
-    'http://192.168.136.133:19006'
-  ],
+  // Tüm isteklere izin ver
+  origin: '*',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
 }));
 
 // File upload directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Statik dosyaları sunmak için middleware ekle
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Profil resimlerinin yükleneceği dizini oluştur (yoksa)
 const uploadDir = path.join(__dirname, '../public/uploads/profiles');
@@ -56,7 +46,8 @@ app.get('/', (req, res) => {
   res.send('Sosyal Etkinlik API Sunucusu çalışıyor');
 });
 
-const PORT = process.env.PORT || 5000;
+// Portu sabit 5000 olarak ayarla ve tüm ortamlarda aynı değeri kullan
+const PORT = 5000;
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -64,10 +55,7 @@ const server = http.createServer(app);
 // Set up Socket.io
 const io = socketio(server, {
   cors: {
-    origin: [
-      process.env.CLIENT_URL_WEB || 'http://localhost:3000',
-      process.env.CLIENT_URL_MOBILE || 'exp://localhost:19000'
-    ],
+    origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -79,13 +67,29 @@ socketManager(io);
 // MongoDB bağlantısını yapıp, sonrasında API rotalarını tanımlayacağız
 const startServer = async () => {
   try {
+    let dbConnected = false;
+    
     // Connect to database - Veritabanına bağlan
     try {
       await connectDB();
       console.log('👍 Veritabanı bağlantısı başarılı, API rotaları etkinleştiriliyor...');
+      dbConnected = true;
     } catch (dbError) {
       console.log('⚠️ Veritabanı bağlantısı başarısız, API rotaları sınırlı çalışacak!');
+      console.log('Veritabanı hatası detayı:', dbError.message);
+      
+      // Veritabanı hatası için global değişken, tüm controller'larda kullanılabilir
+      global.dbConnectionError = {
+        connected: false,
+        error: dbError.message
+      };
     }
+    
+    // Veritabanı bağlantı durumunu global değişkene kaydet
+    global.dbStatus = {
+      connected: dbConnected,
+      timestamp: new Date().toISOString()
+    };
     
     // API rotalarını tanımla
     app.use('/api/users', userRoutes);
@@ -97,8 +101,9 @@ const startServer = async () => {
       console.log('------------------------------------------------');
       console.log('🚀 SUNUCU BAŞLATILDI');
       console.log(`🔧 Ortam: ${process.env.NODE_ENV}`);
-      console.log(`🌐 Adres: http://192.168.136.133:${PORT}`);
+      console.log(`🌐 Adres: http://192.168.137.1:${PORT}`);
       console.log('📱 Web ve Mobil istemcilere hizmet veriyor');
+      console.log(`💾 Veritabanı bağlantısı: ${dbConnected ? 'BAŞARILI ✅' : 'BAŞARISIZ ❌'}`);
       console.log('------------------------------------------------');
     });
     
