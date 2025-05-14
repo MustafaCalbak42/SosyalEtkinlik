@@ -13,7 +13,8 @@ const {
   leaveEvent,
   getEventParticipants,
   getNearbyEvents,
-  getEventsByHobby
+  getEventsByHobby,
+  getRecommendedEvents
 } = require('../controllers/eventController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -50,6 +51,11 @@ router.get('/nearby', getNearbyEvents);
 // @desc    Hobiye göre etkinlikleri getir
 // @access  Public
 router.get('/hobby/:hobbyId', getEventsByHobby);
+
+// @route   GET /api/events/recommended
+// @desc    Kullanıcıya önerilen etkinlikleri getir (Hobilerine göre)
+// @access  Private
+router.get('/recommended', protect, getRecommendedEvents);
 
 // @route   GET /api/events/:id
 // @desc    Etkinlik detaylarını getir

@@ -24,23 +24,27 @@ export const getAllHobbies = async () => {
     
     // Response formatı kontrol edilir
     if (response.data && typeof response.data === 'object') {
-      // Standart API formatımıza uygun mu?
-      if (response.data.success !== undefined) {
-        // Evet, doğrudan döndür
-        return response.data;
-      } else if (Array.isArray(response.data)) {
-        // API düz dizi döndürmüş, standart formata çevirelim
+      // Backend'in döndürdüğü success/message/data formatı
+      if (response.data.success !== undefined && Array.isArray(response.data.data)) {
+        console.log('[hobbyService] Standardized API response format with data array');
+        return response.data; // {success, message, data} formatında
+      }
+      // Backend direk hobi dizisini döndürmüş
+      else if (Array.isArray(response.data)) {
+        console.log('[hobbyService] Plain array response format');
         return {
           success: true,
           message: 'Hobiler başarıyla alındı',
           data: response.data
         };
-      } else {
-        // Belirsiz format, olduğu gibi döndür
+      }
+      // Belirsiz veya boş yanıt
+      else {
+        console.warn('[hobbyService] Unknown response format:', response.data);
         return {
           success: true,
           message: 'Hobiler alındı, ancak format beklenen gibi değil',
-          data: response.data
+          data: response.data.hobbies || response.data.data || response.data || []
         };
       }
     } else {

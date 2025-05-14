@@ -73,14 +73,32 @@ const RegisterPage = () => {
       try {
         console.log('RegisterPage: Hobiler yükleniyor...');
         const response = await getAllHobbies();
-        console.log('RegisterPage: Hobiler yüklendi:', Array.isArray(response) ? response.length : 'array değil', response);
+        console.log('RegisterPage: Hobiler yüklendi:', response);
         
-        // Eğer yanıt diziyse kullan, değilse boş dizi kullan
-        if (Array.isArray(response)) {
+        // response.data içinde dizi var mı kontrol et
+        if (response && response.success && Array.isArray(response.data)) {
+          console.log('RegisterPage: Hobiler başarıyla yüklendi, toplam:', response.data.length);
+          setHobbies(response.data);
+        } 
+        // Direkt response bir dizi mi?
+        else if (Array.isArray(response)) {
+          console.log('RegisterPage: Response doğrudan dizi olarak geldi, toplam:', response.length);
           setHobbies(response);
-        } else {
-          console.warn('RegisterPage: Hobiler dizi biçiminde değil, boş dizi kullanılıyor');
+        } 
+        // Başka bir format
+        else {
+          console.warn('RegisterPage: Hobiler beklenen formatta değil:', response);
           setHobbies([]);
+          
+          // Statik test hobilerini kullan (geçici çözüm)
+          setHobbies([
+            { _id: 'test1', name: 'Futbol', category: 'Spor' },
+            { _id: 'test2', name: 'Resim', category: 'Sanat' },
+            { _id: 'test3', name: 'Yüzme', category: 'Spor' },
+            { _id: 'test4', name: 'Müzik', category: 'Müzik' },
+            { _id: 'test5', name: 'Dans', category: 'Dans' },
+            { _id: 'test6', name: 'Yemek Yapma', category: 'Yemek' }
+          ]);
         }
       } catch (err) {
         console.error('RegisterPage: Hobiler yüklenirken hata:', err);
@@ -282,6 +300,9 @@ const RegisterPage = () => {
     setTestEmailUrl('');
     
     try {
+      console.log('Kayıt verileri:', data);
+      console.log('Seçilen hobiler:', data.hobbies);
+      
       // Form verileri hazırlanıyor
       const registerData = {
         username: data.username,
@@ -293,6 +314,9 @@ const RegisterPage = () => {
         hobbies: data.hobbies || [],
         interests: data.interests || []
       };
+      
+      // Loglama
+      console.log('İşlenmemiş kayıt verileri:', registerData);
       
       const response = await registerUser(registerData);
       
@@ -308,6 +332,7 @@ const RegisterPage = () => {
         setTestEmailUrl(response.developerInfo.emailPreviewUrl);
       }
     } catch (err) {
+      console.error('Kayıt hatası:', err);
       setError(err.message || 'Kayıt olurken bir hata oluştu.');
     } finally {
       setLoading(false);
@@ -374,6 +399,18 @@ const RegisterPage = () => {
                 </Box>
               )}
               
+              {/* Doğrulama kodu giriş butonunu ekle */}
+              <Button
+                variant="contained"
+                color="primary"
+                size="large"
+                onClick={() => navigate('/verify-email', { state: { email: registeredEmail } })}
+                sx={{ mt: 2 }}
+                fullWidth
+              >
+                Doğrulama Kodu Gir
+              </Button>
+
               <Button
                 variant="outlined"
                 color="primary"
@@ -611,7 +648,25 @@ const RegisterPage = () => {
                               multiple
                               options={hobbies || []}
                               loading={loadingHobbies}
-                              getOptionLabel={(option) => option.name || option}
+                              getOptionLabel={(option) => {
+                                // Option bir obje mi yoksa string mi kontrol ediyoruz
+                                if (option && typeof option === 'object' && option.name) {
+                                  return option.name;
+                                }
+                                return option || '';
+                              }}
+                              isOptionEqualToValue={(option, value) => {
+                                // ID'leri varsa ID'ye göre, yoksa isme göre karşılaştır
+                                if (option && value) {
+                                  if (option._id && value._id) {
+                                    return option._id === value._id;
+                                  }
+                                  if (option.name && value.name) {
+                                    return option.name === value.name;
+                                  }
+                                }
+                                return option === value;
+                              }}
                               value={value.filter(h => typeof h === 'object')}
                               onChange={(e, newValue) => {
                                 // Yalnızca seçili hobiler ve özel hobiler birleştirilir
@@ -646,30 +701,35 @@ const RegisterPage = () => {
                                   />
                                 ))
                               }
-                              groupBy={(option) => option.category}
-                              renderOption={(props, option) => (
-                                <li {...props}>
-                                  <Box 
-                                    component="span" 
-                                    sx={{ 
-                                      width: 32, 
-                                      height: 32, 
-                                      borderRadius: '50%',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      mr: 1,
-                                      backgroundColor: getCategoryColor(option.category)
-                                    }}
-                                  >
-                                    {getHobbyIcon(option.name, option.category)}
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="body1">{option.name}</Typography>
-                                    <Typography variant="caption" color="text.secondary">{option.category}</Typography>
-                                  </Box>
-                                </li>
-                              )}
+                              groupBy={(option) => option.category || 'Diğer'}
+                              renderOption={(props, option, state) => {
+                                // props nesnesinden key özelliğini ayır
+                                const { key, ...otherProps } = props;
+                                
+                                return (
+                                  <li key={option._id || option.name || `option-${state.index}`} {...otherProps}>
+                                    <Box 
+                                      component="span" 
+                                      sx={{ 
+                                        width: 32, 
+                                        height: 32, 
+                                        borderRadius: '50%',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        mr: 1,
+                                        backgroundColor: getCategoryColor(option.category)
+                                      }}
+                                    >
+                                      {getHobbyIcon(option.name, option.category)}
+                                    </Box>
+                                    <Box>
+                                      <Typography variant="body1">{option.name || option}</Typography>
+                                      <Typography variant="caption" color="text.secondary">{option.category || 'Diğer'}</Typography>
+                                    </Box>
+                                  </li>
+                                );
+                              }}
                               renderInput={(params) => (
                                 <TextField
                                   {...params}

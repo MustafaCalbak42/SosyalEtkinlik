@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const { generateToken, generateRefreshToken } = require('../config/jwt');
 const { sendPasswordResetEmail, sendVerificationEmail, isValidEmail, verifyResetCode } = require('../services/emailService');
 const crypto = require('crypto');
+const emailService = require('../services/emailService');
 
 // Geliştirme ortamını zorlayalım
 process.env.NODE_ENV = 'development';
@@ -20,6 +21,15 @@ const registerUser = async (req, res) => {
       success: false,
       errors: errors.array() 
     });
+  }
+
+  console.log('Kayıt isteği alındı, body:', req.body);
+  
+  // Hobi verilerini kontrol et
+  if (req.body.hobbies && Array.isArray(req.body.hobbies)) {
+    console.log('Gelen hobiler:', req.body.hobbies);
+  } else {
+    console.log('Hobi verisi gelmedi veya dizi değil:', req.body.hobbies);
   }
 
   const { username, email, password, fullName } = req.body;
@@ -68,8 +78,20 @@ const registerUser = async (req, res) => {
       lastActive: new Date(),
       emailVerified: false,
       verificationToken: hashedToken,
-      verificationTokenExpire: Date.now() + 60 * 60 * 1000 // 60 dakika
+      verificationTokenExpire: Date.now() + 60 * 60 * 1000, // 60 dakika
+      
+      // Diğer kullanıcı verilerini ekleyelim
+      bio: req.body.bio || '',
+      hobbies: req.body.hobbies || [],
+      interests: req.body.interests || [],
+      location: req.body.location || {
+        type: 'Point',
+        coordinates: [0, 0],
+        address: ''
+      }
     });
+    
+    console.log('Kullanıcı oluşturuldu, hobiler:', req.body.hobbies);
 
     try {
       await user.save();
@@ -907,7 +929,7 @@ const verifyEmail = async (req, res) => {
     console.log(`Doğrulama isteği: ${email} için kod: ${code}`);
 
     // E-posta doğrulama kodunu kontrol et
-    const verificationResult = verifyResetCode(email, code);
+    const verificationResult = emailService.verifyResetCode(email, code);
     
     if (!verificationResult.valid) {
       console.error(`Doğrulama hatası: ${email} için kod geçersiz veya süresi dolmuş`);

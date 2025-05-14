@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, CircularProgress } from '@mui/material';
+import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, CircularProgress, Pagination, Divider, Alert } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { Search as SearchIcon, LocationOn, Event, People, Category } from '@mui/icons-material';
+import { Search as SearchIcon, LocationOn, Event, People, Category, Whatshot } from '@mui/icons-material';
 import Navbar from '../components/Layout/Navbar';
 import EventCard from '../components/Events/EventCard';
 import CategoryFilter from '../components/Events/CategoryFilter';
@@ -9,7 +9,8 @@ import RecommendedUsers from '../components/Users/RecommendedUsers';
 import UpcomingEvents from '../components/Events/UpcomingEvents';
 import CreateEventForm from '../components/Events/CreateEventForm';
 import { useAuth } from '../context/AuthContext';
-import { getAllEvents } from '../services/eventService';
+import { getAllEvents, getRecommendedEvents } from '../services/eventService';
+import { useNavigate } from 'react-router-dom';
 
 // Mock data for events (fallback only)
 const mockEvents = [
@@ -96,23 +97,48 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [createEventOpen, setCreateEventOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  
+  // Sayfalandırma state'leri
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(6); // Sayfa başına gösterilecek etkinlik sayısı
+  const [pagination, setPagination] = useState({
+    total: 0,
+    pages: 1,
+    page: 1
+  });
+
+  // Size Özel Etkinlikler için state'ler
+  const [recommendedEvents, setRecommendedEvents] = useState([]);
+  const [loadingRecommended, setLoadingRecommended] = useState(false);
+  const [errorRecommended, setErrorRecommended] = useState('');
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [currentPage, selectedCategory]); // Sayfa değiştiğinde ve kategori değiştiğinde etkinlikleri yeniden yükle
+
+  // Kullanıcı giriş yapmışsa, önerilen etkinlikleri yükle
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchRecommendedEvents();
+    }
+  }, [isAuthenticated]);
 
   const fetchEvents = async () => {
     setLoading(true);
     setError('');
     
     try {
-      console.log('[HomePage] Fetching events from server...');
-      const result = await getAllEvents();
+      console.log(`[HomePage] Fetching events - page: ${currentPage}, limit: ${itemsPerPage}, category: ${selectedCategory}`);
+      const result = await getAllEvents(currentPage, itemsPerPage, selectedCategory);
       
       if (result.success && result.data) {
         console.log('[HomePage] Successfully loaded events:', result.data.length);
         setEvents(result.data);
+        if (result.pagination) {
+          setPagination(result.pagination);
+        }
       } else {
         console.error('[HomePage] Failed to load events:', result.message);
         setError('Etkinlikler yüklenirken bir hata oluştu: ' + result.message);
@@ -128,6 +154,30 @@ function HomePage() {
     }
   };
 
+  // Önerilen etkinlikleri getir
+  const fetchRecommendedEvents = async () => {
+    setLoadingRecommended(true);
+    setErrorRecommended('');
+    
+    try {
+      console.log(`[HomePage] Fetching recommended events for user`);
+      const result = await getRecommendedEvents(1, 4); // İlk sayfa, 4 etkinlik
+      
+      if (result.success && result.data) {
+        console.log('[HomePage] Successfully loaded recommended events:', result.data.length);
+        setRecommendedEvents(result.data);
+      } else {
+        console.error('[HomePage] Failed to load recommended events:', result.message);
+        setErrorRecommended('Önerilen etkinlikler yüklenirken bir hata oluştu: ' + result.message);
+      }
+    } catch (error) {
+      console.error('[HomePage] Error loading recommended events:', error);
+      setErrorRecommended('Önerilen etkinlikler yüklenirken bir hata oluştu');
+    } finally {
+      setLoadingRecommended(false);
+    }
+  };
+
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
@@ -140,19 +190,16 @@ function HomePage() {
     setCreateEventOpen(false);
     if (refresh) {
       fetchEvents();
+      // Eğer kullanıcı giriş yapmışsa, önerilen etkinlikleri de yenile
+      if (isAuthenticated) {
+        fetchRecommendedEvents();
+      }
     }
   };
 
-  const filteredEvents = selectedCategory === 'Tümü' 
-    ? events 
-    : events.filter(event => {
-        // Hobby'nin kategori bilgisini kontrol et
-        if (event.hobby && typeof event.hobby === 'object') {
-          return event.hobby.category === selectedCategory;
-        }
-        // Eğer event.category varsa (mock data için)
-        return event.category === selectedCategory;
-      });
+  // Filtreleme artık server tarafında yapılacağı için bu fonksiyonu kaldırıyoruz
+  // Filtrelenmiş etkinlikleri direkt API'den alıyoruz
+  const filteredEvents = events;
 
   // Event ID veya _id alanına göre key oluştur
   const getEventKey = (event) => {
@@ -212,6 +259,12 @@ function HomePage() {
     return 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60';
   };
 
+  // Sayfa değişikliği
+  const handlePageChange = (event, value) => {
+    setCurrentPage(value);
+    window.scrollTo(0, 0); // Sayfa değiştiğinde en üste git
+  };
+
   return (
     <>
       <Navbar />
@@ -253,6 +306,88 @@ function HomePage() {
           />
         </SearchBox>
 
+        {/* Size Özel Etkinlikler Bölümü */}
+        <Box sx={{ mb: 5 }}>
+          <Paper sx={{ p: 3, borderRadius: 2, mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Whatshot sx={{ mr: 1, color: 'error.main' }} />
+              <Typography variant="h5" component="h2" fontWeight="bold">
+                Size Özel Etkinlikler
+              </Typography>
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              {isAuthenticated 
+                ? 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
+                : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+            </Typography>
+            
+            <Divider sx={{ mb: 3 }} />
+            
+            {!isAuthenticated && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Hobilerinize uygun etkinlikleri görmek için <Button 
+                  variant="outlined" 
+                  size="small" 
+                  color="primary"
+                  sx={{ ml: 1 }}
+                  onClick={() => navigate('/login')}
+                >
+                  Giriş Yapın
+                </Button>
+              </Alert>
+            )}
+            
+            {isAuthenticated && loadingRecommended ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : isAuthenticated && errorRecommended ? (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {errorRecommended}
+              </Alert>
+            ) : isAuthenticated && recommendedEvents.length === 0 ? (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.
+              </Alert>
+            ) : isAuthenticated && (
+              <Grid container spacing={3}>
+                {recommendedEvents.map(event => (
+                  <Grid item xs={12} sm={6} md={3} key={getEventKey(event)}>
+                    <EventCard 
+                      event={{
+                        ...event,
+                        title: event.title,
+                        description: event.description,
+                        image: getEventImage(event),
+                        date: event.startDate || event.date,
+                        location: formatEventLocation(event),
+                        ...getAttendeeInfo(event),
+                        category: getEventCategory(event)
+                      }} 
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+            )}
+            
+            {isAuthenticated && recommendedEvents.length > 0 && (
+              <Box sx={{ textAlign: 'center', mt: 2 }}>
+                <Button 
+                  variant="outlined" 
+                  color="primary"
+                  onClick={() => {
+                    setSelectedCategory('Tümü');
+                    setTabValue(0);
+                  }}
+                >
+                  Tüm Etkinlikleri Görüntüle
+                </Button>
+              </Box>
+            )}
+          </Paper>
+        </Box>
+
         <Grid container spacing={4}>
           <Grid item xs={12} md={8}>
             <Box sx={{ mb: 3 }}>
@@ -272,11 +407,14 @@ function HomePage() {
               
               <CategoryFilter 
                 selectedCategory={selectedCategory} 
-                onSelectCategory={setSelectedCategory} 
+                onSelectCategory={(category) => {
+                  setSelectedCategory(category);
+                  setCurrentPage(1); // Kategori değiştiğinde ilk sayfaya dön
+                }} 
               />
               
               <Typography variant="h5" component="h2" fontWeight="bold" sx={{ mt: 3, mb: 2 }}>
-                {selectedCategory === 'Tümü' ? 'Öne Çıkan Etkinlikler' : `${selectedCategory} Etkinlikleri`}
+                {selectedCategory === 'Tümü' ? 'Tüm  Etkinlikler' : `${selectedCategory} Etkinlikleri`}
               </Typography>
               
               {loading ? (
@@ -288,24 +426,41 @@ function HomePage() {
                   {error}
                 </Paper>
               ) : (
-                <Grid container spacing={3}>
-                  {filteredEvents.map(event => (
-                    <Grid item xs={12} sm={6} key={getEventKey(event)}>
-                      <EventCard 
-                        event={{
-                          ...event,
-                          title: event.title,
-                          description: event.description,
-                          image: getEventImage(event),
-                          date: event.startDate || event.date,
-                          location: formatEventLocation(event),
-                          ...getAttendeeInfo(event),
-                          category: getEventCategory(event)
-                        }} 
+                <>
+                  <Grid container spacing={3}>
+                    {filteredEvents.map(event => (
+                      <Grid item xs={12} sm={6} key={getEventKey(event)}>
+                        <EventCard 
+                          event={{
+                            ...event,
+                            title: event.title,
+                            description: event.description,
+                            image: getEventImage(event),
+                            date: event.startDate || event.date,
+                            location: formatEventLocation(event),
+                            ...getAttendeeInfo(event),
+                            category: getEventCategory(event)
+                          }} 
+                        />
+                      </Grid>
+                    ))}
+                  </Grid>
+                  
+                  {/* Sayfalandırma */}
+                  {pagination.pages > 1 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                      <Pagination 
+                        count={pagination.pages} 
+                        page={currentPage}
+                        onChange={handlePageChange}
+                        color="primary"
+                        size="large"
+                        showFirstButton
+                        showLastButton
                       />
-                    </Grid>
-                  ))}
-                </Grid>
+                    </Box>
+                  )}
+                </>
               )}
               
               {!loading && !error && filteredEvents.length === 0 && (
