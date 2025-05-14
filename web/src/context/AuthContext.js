@@ -148,10 +148,11 @@ export const AuthProvider = ({ children }) => {
     logout,
     refreshUserData,
     authChecked,
-    isAuthenticated: () => {
-      // Hem token var mı hem de user objesi var mı kontrol et
+    isAuthenticated: !!localStorage.getItem('token'), // Değer olarak kullanılabilir
+    checkAuth: () => {
+      // Fonksiyon olarak kullanılabilir
       const token = localStorage.getItem('token');
-      return !!token; // Sadece token kontrolü yapalım, user objesi olmasa da token varsa authenticated sayılsın
+      return !!token;
     },
   };
 

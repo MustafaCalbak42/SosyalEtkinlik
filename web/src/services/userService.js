@@ -45,14 +45,30 @@ export const loginUser = async (loginData) => {
  */
 export const registerUser = async (registerData) => {
   try {
+    console.log('Kullanıcı kaydı başlatılıyor, gelen veriler:', registerData);
+    
     // Hobi verilerini işle - Eğer hobiler varsa yalnızca ID'lerini gönder
     let processedData = { ...registerData };
     
     if (registerData.hobbies && Array.isArray(registerData.hobbies)) {
       // Hobi objelerini ID'lere dönüştür
-      processedData.hobbies = registerData.hobbies.map(hobby => 
-        typeof hobby === 'object' && hobby._id ? hobby._id : hobby
-      );
+      processedData.hobbies = registerData.hobbies.map(hobby => {
+        console.log('İşlenen hobi:', hobby);
+        
+        if (typeof hobby === 'object' && hobby._id) {
+          return hobby._id;
+        } else if (typeof hobby === 'string') {
+          // Özel hobiler için string değeri doğrudan kullan
+          return hobby;
+        } else if (hobby && hobby.toString) {
+          // Başka türlü bir değerse string'e dönüştür
+          return hobby.toString();
+        }
+        
+        return null;
+      }).filter(id => id !== null); // Null değerleri filtrele
+      
+      console.log('İşlenmiş hobiler:', processedData.hobbies);
     }
     
     // Şehir bilgisini konum nesnesine dönüştür
@@ -68,13 +84,18 @@ export const registerUser = async (registerData) => {
       delete processedData.city;
     }
     
+    console.log('Sunucuya gönderilecek veriler:', processedData);
+    
     const response = await axios.post(`${API_URL}/register`, processedData);
+    
+    console.log('Sunucu yanıtı:', response.data);
     
     // Not: Kayıt sonrası token oluşmadığı için localStorage'a kaydetmiyoruz
     // Önce e-posta doğrulanması gerekiyor
     
     return response.data;
   } catch (error) {
+    console.error('Kayıt hatası:', error);
     throw handleError(error);
   }
 };
@@ -359,6 +380,39 @@ export const getUserByUsername = async (username) => {
     const response = await axiosInstance.get(`${API_URL}/profile/${username}`);
     return response.data;
   } catch (error) {
+    throw handleError(error);
+  }
+};
+
+/**
+ * E-posta doğrulama kodunu doğrular
+ * @param {Object} data - E-posta ve kod bilgisi {email, code}
+ * @returns {Promise<Object>}
+ */
+export const verifyEmailCode = async (data) => {
+  try {
+    console.log('Verifying email code for:', data.email);
+    
+    const response = await axios.post(`${API_URL}/verify-email`, {
+      email: data.email,
+      code: data.code
+    });
+    
+    console.log('Email verification response:', response.data);
+    
+    // Doğrulama başarılıysa ve token varsa kaydet
+    if (response.data && response.data.success) {
+      if (response.data.accessToken) {
+        localStorage.setItem('token', response.data.accessToken);
+      }
+      if (response.data.refreshToken) {
+        localStorage.setItem('refreshToken', response.data.refreshToken);
+      }
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Email verification error:', error.response?.data || error);
     throw handleError(error);
   }
 };

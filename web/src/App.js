@@ -14,6 +14,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import VerifyResetCodePage from './pages/VerifyResetCodePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import EmailVerifiedPage from './pages/EmailVerifiedPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import ProfilePage from './pages/ProfilePage';
 import ProfileSettingsPage from './pages/ProfileSettingsPage';
 import HomePage from './pages/HomePage';
@@ -103,6 +104,7 @@ function App() {
             
             {/* E-posta doğrulama */}
             <Route path="/email-verified" element={<EmailVerifiedPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             
             {/* Ana Sayfa */}
             <Route 

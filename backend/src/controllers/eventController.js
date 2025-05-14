@@ -140,15 +140,52 @@ const createEvent = async (req, res) => {
 // @access  Public
 const getEvents = async (req, res) => {
   try {
-    const events = await Event.find({})
+    // Sayfalandırma parametrelerini al
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const category = req.query.category || null;
+    
+    // Filtreleme için sorgu oluştur
+    let query = {};
+    
+    // Kategori filtresi
+    if (category && category !== 'Tümü') {
+      // Önce kategoriye ait hobileri bul
+      const hobbies = await Hobby.find({ category });
+      const hobbyIds = hobbies.map(hobby => hobby._id);
+      
+      // Hobi ID'lerine göre etkinlikleri filtrele
+      query.hobby = { $in: hobbyIds };
+    }
+    
+    // Toplam etkinlik sayısını bul
+    const totalEvents = await Event.countDocuments(query);
+    
+    // Sayfalandırılmış etkinlikleri al
+    const events = await Event.find(query)
       .populate('organizer', 'username fullName profilePicture')
       .populate('hobby', 'name category')
-      .sort({ startDate: 1 });
+      .sort({ startDate: 1 })
+      .skip(skip)
+      .limit(limit);
     
-    res.json(events);
+    res.json({
+      success: true,
+      data: events,
+      pagination: {
+        total: totalEvents,
+        page,
+        limit,
+        pages: Math.ceil(totalEvents / limit)
+      }
+    });
   } catch (error) {
     console.error('Etkinlikleri getirme hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
   }
 };
 
@@ -479,6 +516,128 @@ const getEventsByHobby = async (req, res) => {
   }
 };
 
+// @desc    Kullanıcıya önerilen etkinlikleri getir (Hobilerine göre)
+// @route   GET /api/events/recommended
+// @access  Private
+const getRecommendedEvents = async (req, res) => {
+  try {
+    // Sayfalandırma parametrelerini al
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 4;
+    const skip = (page - 1) * limit;
+    
+    console.log(`[eventController] Recommended events request - user: ${req.user.id}, page: ${page}, limit: ${limit}`);
+    
+    // Kullanıcı bilgilerini al
+    const user = await User.findById(req.user.id).populate('hobbies');
+    
+    if (!user) {
+      console.log(`[eventController] User not found: ${req.user.id}`);
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+    
+    console.log('[eventController] User hobbies:', user.hobbies.map(h => ({id: h._id, name: h.name})));
+    console.log('[eventController] User location:', JSON.stringify(user.location));
+    
+    // Kullanıcı hobilerini kontrol et
+    if (!user.hobbies || user.hobbies.length === 0) {
+      console.log('[eventController] User has no hobbies, returning all events');
+      // Hobi yoksa en yakın etkinlikleri getir
+      const events = await Event.find({ status: 'active' })
+        .populate('organizer', 'username fullName profilePicture')
+        .populate('hobby', 'name category')
+        .sort({ startDate: 1 })
+        .skip(skip)
+        .limit(limit);
+      
+      const totalEvents = await Event.countDocuments({ status: 'active' });
+      
+      return res.json({
+        success: true,
+        data: events,
+        message: 'Hobi tercihiniz olmadığı için tüm etkinlikler listelendi',
+        pagination: {
+          total: totalEvents,
+          page,
+          limit,
+          pages: Math.ceil(totalEvents / limit)
+        }
+      });
+    }
+    
+    // Kullanıcının hobilerinden ID'leri çıkar
+    const hobbyIds = user.hobbies.map(hobby => hobby._id);
+    console.log('[eventController] User hobby IDs:', hobbyIds);
+    
+    // Kullanıcının konumunu kontrol et
+    let locationFilter = {};
+    
+    // Kullanıcının adres bilgisini kontrol et ve il bilgisini çıkar
+    if (user.location && user.location.address) {
+      // Adres alanından il bilgisini çıkar (örn: "İstanbul, Kadıköy" -> "İstanbul")
+      const addressParts = user.location.address.split(',');
+      if (addressParts.length > 0) {
+        const province = addressParts[0].trim();
+        console.log('[eventController] User province:', province);
+        
+        // Etkinlikleri il bilgisine göre filtrele
+        if (province) {
+          locationFilter = {
+            'location.address': { $regex: province, $options: 'i' }
+          };
+          console.log('[eventController] Using location filter:', JSON.stringify(locationFilter));
+        }
+      }
+    } else {
+      console.log('[eventController] User has no location address, skipping location filter');
+    }
+    
+    // Hobi ID'lerine ve konuma göre etkinlikleri bul
+    const query = {
+      hobby: { $in: hobbyIds },
+      status: 'active',
+      ...locationFilter
+    };
+    
+    console.log('[eventController] Final query:', JSON.stringify(query));
+    
+    // Toplam etkinlik sayısını bul
+    const totalEvents = await Event.countDocuments(query);
+    console.log(`[eventController] Found ${totalEvents} matching events`);
+    
+    // Etkinlikleri getir
+    const events = await Event.find(query)
+      .populate('organizer', 'username fullName profilePicture')
+      .populate('hobby', 'name category')
+      .sort({ startDate: 1 })
+      .skip(skip)
+      .limit(limit);
+    
+    console.log(`[eventController] Returning ${events.length} events for user ${user.username}`);
+    console.log('[eventController] Event locations:', events.map(e => e.location?.address || 'No address'));
+    
+    res.json({
+      success: true,
+      data: events,
+      pagination: {
+        total: totalEvents,
+        page,
+        limit,
+        pages: Math.ceil(totalEvents / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Önerilen etkinlikleri getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+};
+
 module.exports = {
   createEvent,
   getEvents,
@@ -489,5 +648,6 @@ module.exports = {
   leaveEvent,
   getEventParticipants,
   getNearbyEvents,
-  getEventsByHobby
+  getEventsByHobby,
+  getRecommendedEvents
 }; 
