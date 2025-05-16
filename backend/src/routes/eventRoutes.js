@@ -14,7 +14,8 @@ const {
   getEventParticipants,
   getNearbyEvents,
   getEventsByHobby,
-  getRecommendedEvents
+  getRecommendedEvents,
+  cleanupExpiredEvents
 } = require('../controllers/eventController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -56,6 +57,11 @@ router.get('/hobby/:hobbyId', getEventsByHobby);
 // @desc    Kullanıcıya önerilen etkinlikleri getir (Hobilerine göre)
 // @access  Private
 router.get('/recommended', protect, getRecommendedEvents);
+
+// @route   POST /api/events/cleanup
+// @desc    Süresi dolmuş etkinlikleri temizle (Admin)
+// @access  Private/Admin
+router.post('/cleanup', protect, cleanupExpiredEvents);
 
 // @route   GET /api/events/:id
 // @desc    Etkinlik detaylarını getir

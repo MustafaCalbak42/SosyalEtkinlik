@@ -10,6 +10,8 @@ const connectDB = require('./config/db');
 const path = require('path');
 const socketManager = require('./socket/socketManager');
 const fs = require('fs');
+const emailService = require('./services/emailService');
+const cleanupService = require('./services/cleanupService');
 
 // Routes
 const userRoutes = require('./routes/userRoutes');
@@ -91,6 +93,23 @@ const startServer = async () => {
       timestamp: new Date().toISOString()
     };
     
+    // Temizleme sistemi için global değişken
+    global.cleanupScheduleStarted = false;
+    
+    // Event endpoint'lerine middleware ekle - otomatik temizleme sistemi için
+    app.use('/api/events', (req, res, next) => {
+      // Eğer temizleme zamanlayıcısı henüz başlatılmamışsa ve veritabanı bağlantısı varsa
+      if (!global.cleanupScheduleStarted && dbConnected) {
+        // Her 5 dakikada bir süresi dolmuş etkinlikleri temizle
+        const CLEANUP_INTERVAL_MINUTES = 5;
+        console.log('🔄 İlk etkinlik isteği alındı, otomatik temizleme sistemi başlatılıyor...');
+        console.log(`🕒 Temizleme sıklığı: Her ${CLEANUP_INTERVAL_MINUTES} dakikada bir`);
+        cleanupService.startCleanupSchedule(CLEANUP_INTERVAL_MINUTES);
+        global.cleanupScheduleStarted = true;
+      }
+      next();
+    });
+    
     // API rotalarını tanımla
     app.use('/api/users', userRoutes);
     app.use('/api/hobbies', hobbyRoutes);
@@ -105,6 +124,14 @@ const startServer = async () => {
       console.log('📱 Web ve Mobil istemcilere hizmet veriyor');
       console.log(`💾 Veritabanı bağlantısı: ${dbConnected ? 'BAŞARILI ✅' : 'BAŞARISIZ ❌'}`);
       console.log('------------------------------------------------');
+      
+      /* Otomatik temizleme sistemi artık ilk etkinlik işleminden sonra başlatılacak
+      if (dbConnected) {
+        // Her 5 dakikada bir süresi dolmuş etkinlikleri temizle
+        const CLEANUP_INTERVAL_MINUTES = 5;
+        cleanupService.startCleanupSchedule(CLEANUP_INTERVAL_MINUTES);
+      }
+      */
     });
     
   } catch (error) {

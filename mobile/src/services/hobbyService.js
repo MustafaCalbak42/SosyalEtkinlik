@@ -22,12 +22,27 @@ export const getAllHobbies = async () => {
       throw new Error(response.data?.message || 'Hobiler alınırken bir hata oluştu');
     }
     
-    if (!Array.isArray(response.data)) {
-      console.error('Beklenmeyen yanıt formatı:', response.data);
+    // Response formatı kontrol edilir
+    if (response.data && typeof response.data === 'object') {
+      // Backend'in döndürdüğü success/message/data formatı
+      if (response.data.success !== undefined && Array.isArray(response.data.data)) {
+        console.log('Standart API yanıt formatı (data dizisi)');
+        return response.data.data; // Sadece data dizisini dön
+      }
+      // Backend direk hobi dizisini döndürmüş
+      else if (Array.isArray(response.data)) {
+        console.log('Düz dizi yanıt formatı');
+        return response.data;
+      }
+      // Belirsiz veya başka bir formatta
+      else {
+        console.warn('Bilinmeyen yanıt formatı:', response.data);
+        return response.data.hobbies || response.data.data || [];
+      }
+    } else {
+      console.error('Geçersiz veri formatı:', response.data);
       throw new Error('Hobiler beklenen formatta değil');
     }
-    
-    return response.data;
   } catch (error) {
     console.error('Hobiler alınırken hata:', error);
     throw new Error(error.message || 'Hobiler alınırken bir hata oluştu');

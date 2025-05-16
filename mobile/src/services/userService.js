@@ -160,6 +160,51 @@ export const resetPassword = async (data) => {
 };
 
 /**
+ * E-posta doğrulama kodunu doğrular ve kullanıcı kaydını tamamlar
+ * @param {Object} data - E-posta doğrulama verileri (email, code)
+ * @returns {Promise<Object>}
+ */
+export const verifyEmailCode = async (data) => {
+  try {
+    console.log('E-posta doğrulama isteği gönderiliyor:', data);
+    
+    const response = await api.auth.verifyEmail(data);
+    
+    console.log('Doğrulama yanıtı:', response.data);
+    
+    // Doğrulama başarılıysa ve token döndüyse AsyncStorage'a kaydet
+    if (response.data.success && response.data.accessToken) {
+      await AsyncStorage.setItem('token', response.data.accessToken);
+      
+      if (response.data.refreshToken) {
+        await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+      }
+      
+      // Kullanıcı bilgilerini de kaydet
+      if (response.data.data) {
+        await AsyncStorage.setItem('user', JSON.stringify(response.data.data));
+      }
+      
+      console.log('Doğrulama başarılı, token ve kullanıcı kaydedildi');
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('E-posta doğrulama hatası:', error);
+    
+    // Hata yanıtını formatla
+    if (error.response?.data) {
+      return {
+        success: false,
+        message: error.response.data.message || 'Doğrulama işlemi başarısız oldu'
+      };
+    }
+    
+    throw handleError(error);
+  }
+};
+
+/**
  * API hata işleme
  * @param {Error} error - Axios hatası
  * @returns {Error} - İşlenmiş hata
@@ -188,5 +233,6 @@ export default {
   isAuthenticated,
   forgotPassword,
   verifyResetCode,
-  resetPassword
+  resetPassword,
+  verifyEmailCode
 }; 

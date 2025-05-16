@@ -10,6 +10,7 @@ import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import VerifyResetCodeScreen from '../screens/VerifyResetCodeScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import EmailVerifiedScreen from '../screens/EmailVerifiedScreen';
+import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 
 const Stack = createStackNavigator();
 
@@ -48,6 +49,21 @@ const AuthNavigator = () => {
         name="Register" 
         component={RegisterScreen} 
         options={{ title: 'Kayıt Ol' }}
+      />
+      <Stack.Screen 
+        name="VerifyEmail" 
+        component={VerifyEmailScreen} 
+        options={{ 
+          title: 'E-posta Doğrula',
+          headerLeft: (props) => (
+            <TouchableOpacity
+              onPress={() => props.navigation.navigate('Login')}
+              style={{ marginLeft: 15 }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+          ),
+        }}
       />
       <Stack.Screen 
         name="ForgotPassword" 
