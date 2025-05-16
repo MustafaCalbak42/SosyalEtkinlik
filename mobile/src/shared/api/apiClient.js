@@ -176,7 +176,7 @@ const api = {
     verifyResetCode: (verificationData) => apiClient.post('/users/verify-reset-code', verificationData),
     resetPassword: (passwordData) => apiClient.post('/users/reset-password', passwordData),
     resendVerification: (emailData) => apiClient.post('/users/resend-verification', emailData),
-    verifyEmail: (token) => apiClient.get(`/users/verify-email/${token}`),
+    verifyEmail: (verificationData) => apiClient.post('/users/verify-email', verificationData),
     handleEmailVerified: async (verificationData) => {
       try {
         // Tokenleri saklama

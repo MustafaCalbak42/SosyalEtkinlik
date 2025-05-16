@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -9,649 +9,811 @@ import {
   Image, 
   Dimensions,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  StatusBar,
+  FlatList
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import AuthContext from '../contexts/AuthContext';
-import apiClient from '../shared/api/apiClient';
 import EventCard from '../components/EventCard';
-import { theme } from '../styles/theme';
-import UserAvatar from '../components/UserAvatar';
-import CategoryFilter from '../components/CategoryFilter';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import colors from '../shared/theme/colors';
+import { getAllEvents, getRecommendedEvents } from '../services/eventService';
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
-  const { userProfile } = useAuth();
-  const { signOut } = useContext(AuthContext);
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  // States
   const [events, setEvents] = useState([]);
-  const [recommendedUsers, setRecommendedUsers] = useState([]);
-  const [filteredEvents, setFilteredEvents] = useState([]);
+  const [recommendedEvents, setRecommendedEvents] = useState([]);
+  const [popularEvents, setPopularEvents] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('Tümü');
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [recommendedLoading, setRecommendedLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const [tabValue, setTabValue] = useState(0); // 0: Etkinlikler, 1: Yakınımdaki, 2: Arkadaşlarım
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 6,
+    total: 0,
+    pages: 1
+  });
 
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await apiClient.events.getEvents();
-      setEvents(response.data);
-      setFilteredEvents(response.data);
-    } catch (err) {
-      console.error('Error fetching events:', err);
-      setError('Failed to load events. Please try again.');
-    } finally {
-      setLoading(false);
+  const { isAuthenticated, user } = useAuth();
+  const userProfile = user;
+  
+  // Dummy kategoriler
+  const categories = [
+    { id: 1, name: 'Tümü', icon: 'apps' },
+    { id: 2, name: 'Müzik', icon: 'musical-notes' },
+    { id: 3, name: 'Spor', icon: 'basketball' },
+    { id: 4, name: 'Sanat', icon: 'color-palette' },
+    { id: 5, name: 'Dans', icon: 'footsteps' },
+    { id: 6, name: 'Yemek', icon: 'fast-food' },
+    { id: 7, name: 'Teknoloji', icon: 'laptop' },
+    { id: 8, name: 'Doğa', icon: 'leaf' }
+  ];
+  
+  // İlgi alanları dummy data
+  const userInterests = ['Müzik', 'Teknoloji', 'Seyahat', 'Doğa', 'Spor'];
+
+  useEffect(() => {
+    // Kategori değiştiğinde sayfa numarasını sıfırla ve etkinlikleri yeniden getir
+    setPagination({
+      ...pagination,
+      page: 1
+    });
+    fetchEvents(1, pagination.limit, selectedCategory);
+    
+    if (isAuthenticated) {
+      fetchRecommendedEvents();
     }
-  };
+  }, [isAuthenticated, selectedCategory]);
 
-  const fetchRecommendedUsers = async () => {
+  // Etkinlikleri getir
+  const fetchEvents = async (page = 1, limit = pagination.limit, category = selectedCategory) => {
+    setLoading(page === 1);
+    setError('');
+    
     try {
-      const response = await apiClient.users.getRecommendedUsers();
-      if (response.data) {
-        setRecommendedUsers(response.data);
+      const response = await getAllEvents(page, limit, category);
+      
+      if (response && response.success) {
+        // API'den gelen verileri doğrula
+        const validEvents = (response.data || []).filter(event => 
+          event && typeof event === 'object' && event._id
+        );
+        
+        // Sayfa 1'se yeniden başlat, değilse mevcut listeye ekle
+        if (page === 1) {
+          setEvents(validEvents);
+        } else {
+          setEvents(prevEvents => [...prevEvents, ...validEvents]);
+        }
+        
+        // Popüler etkinlikleri ayarla (en çok katılımcısı olanlar)
+        if (page === 1 && validEvents.length > 0) {
+          const sorted = [...validEvents].sort((a, b) => {
+            const aCount = a.participants?.length || a.attendees?.length || 0;
+            const bCount = b.participants?.length || b.attendees?.length || 0;
+            return bCount - aCount;
+          });
+          setPopularEvents(sorted.slice(0, 3));
+        }
+        
+        // Sayfalandırma bilgilerini güncelle
+        setPagination({
+          page: response.pagination?.page || page,
+          limit: response.pagination?.limit || limit,
+          total: response.pagination?.total || (response.data ? response.data.length : 0),
+          pages: response.pagination?.pages || 1
+        });
+      } else {
+        setError(response?.message || 'Etkinlikler yüklenirken bir hata oluştu');
       }
     } catch (error) {
-      console.error('Error loading recommended users:', error);
+      console.error('Etkinlikler yüklenirken hata:', error);
+      setError(`Etkinlikler yüklenirken hata: ${error.message}`);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  useEffect(() => {
-    fetchEvents();
-    fetchRecommendedUsers();
-  }, []);
-
-  useEffect(() => {
-    filterEvents();
-  }, [selectedCategory, searchQuery, events]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchEvents();
-    await fetchRecommendedUsers();
-    setRefreshing(false);
-  };
-
-  const handleUserPress = (userId) => {
-    navigation.navigate('UserProfile', { userId });
-  };
-
-  const filterEvents = () => {
-    if (!events.length) return;
+  // Önerilen etkinlikleri getir
+  const fetchRecommendedEvents = async () => {
+    setRecommendedLoading(true);
     
-    let filtered = [...events];
-
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(event =>
-        event.title.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+    try {
+      const response = await getRecommendedEvents(1, 4);
+      
+      if (response && response.success) {
+        // API'den gelen verileri doğrula
+        const validEvents = (response.data || []).filter(event => 
+          event && typeof event === 'object' && event._id
+        );
+        setRecommendedEvents(validEvents);
+      } else {
+        console.warn('Önerilen etkinlikler yüklenemedi:', response?.message);
+      }
+    } catch (error) {
+      console.error('Önerilen etkinlikler yüklenirken hata:', error);
+    } finally {
+      setRecommendedLoading(false);
     }
-
-    // Filter by category
-    if (selectedCategory !== 'All') {
-      filtered = filtered.filter(event => 
-        event.hobby && event.hobby.category === selectedCategory
-      );
-    }
-
-    setFilteredEvents(filtered);
   };
 
-  const handleCategorySelect = (category) => {
-    setSelectedCategory(category);
+  // Yenileme işlemi
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPagination({
+      ...pagination,
+      page: 1
+    });
+    
+    Promise.all([
+      fetchEvents(1, pagination.limit, selectedCategory),
+      isAuthenticated ? fetchRecommendedEvents() : Promise.resolve()
+    ]).finally(() => {
+      setRefreshing(false);
+    });
+  }, [isAuthenticated, selectedCategory, pagination.limit]);
+
+  // Daha fazla etkinlik yükle
+  const loadMoreEvents = () => {
+    // Daha fazla sayfa yoksa veya yükleme zaten devam ediyorsa çık
+    if (pagination.page >= pagination.pages || loading || loadingMore) {
+      return;
+    }
+    
+    setLoadingMore(true);
+    fetchEvents(pagination.page + 1, pagination.limit, selectedCategory);
   };
 
-  const renderRecommendedUsers = () => {
-    if (!recommendedUsers.length) return null;
-
+  // Footer komponenti (yükleme göstergesi)
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    
     return (
-      <View style={styles.recommendedUsersSection}>
-        <Text style={styles.sectionTitle}>Recommended Users</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.recommendedUsersList}
-        >
-          {recommendedUsers.map(user => (
-            <TouchableOpacity 
-              key={user._id}
-              style={styles.recommendedUserItem}
-              onPress={() => handleUserPress(user._id)}
-            >
-              <UserAvatar 
-                size={50} 
-                uri={user.profilePicture} 
-                name={user.name} 
-              />
-              <Text style={styles.recommendedUserName} numberOfLines={1}>
-                {user.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={colors.primary.main} />
+        <Text style={styles.footerText}>Daha fazla etkinlik yükleniyor...</Text>
       </View>
     );
   };
 
-  const renderContent = () => {
-    if (loading) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading events...</Text>
-        </View>
-      );
-    }
-
-    if (error) {
-      return (
-        <View style={styles.centered}>
-          <Icon name="alert-circle-outline" size={50} color="#f44336" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchEvents}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    if (filteredEvents.length === 0) {
-      return (
-        <View style={styles.noEventsContainer}>
-          <Icon 
-            name="calendar-remove" 
-            size={80} 
-            color={theme.colors.primary}
-            style={styles.noEventsIcon}
-          />
-          <Text style={styles.noEventsText}>
-            {selectedCategory === 'All' 
-              ? 'No events available at the moment' 
-              : `No ${selectedCategory} events available`}
-          </Text>
-          {selectedCategory !== 'All' && (
-            <TouchableOpacity 
-              style={styles.viewAllButton}
-              onPress={() => setSelectedCategory('All')}
-            >
-              <Text style={styles.viewAllButtonText}>View All Events</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.eventsContainer}>
-        {filteredEvents.map(event => (
-          <EventCard key={event._id} event={event} />
-        ))}
-      </View>
-    );
-  };
-
+  // Giriş sayfasına yönlendir
   const navigateToLogin = () => {
-    // Directly navigate to the Auth stack
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Auth' }],
+    navigation.navigate('Auth', { screen: 'Login' });
+  };
+
+  // Etkinlik oluşturma sayfasına yönlendir
+  const navigateToCreateEvent = () => {
+    if (isAuthenticated) {
+      navigation.navigate('CreateEvent');
+    } else {
+      navigateToLogin();
+    }
+  };
+
+  // Tab değiştirme
+  const handleTabChange = (index) => {
+    setTabValue(index);
+  };
+  
+  // Kategori geçişlerini render et
+  const renderCategoryItem = ({ item }) => (
+    <TouchableOpacity 
+      style={[
+        styles.categoryItem,
+        selectedCategory === item.name && styles.selectedCategoryItem
+      ]}
+      onPress={() => setSelectedCategory(item.name)}
+    >
+      <Ionicons 
+        name={item.icon} 
+        size={22} 
+        color={selectedCategory === item.name ? '#fff' : colors.primary.main} 
+      />
+      <Text 
+        style={[
+          styles.categoryText,
+          selectedCategory === item.name && styles.selectedCategoryText
+        ]}
+      >
+        {item.name}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // Etkinlik listesini render et
+  const renderEventItem = ({ item }) => (
+    <View style={styles.eventCardContainer}>
+      <EventCard event={item} />
+    </View>
+  );
+
+  // Kategori filtresi güvenli şekilde uygula
+  const getFilteredEvents = () => {
+    if (!events || !Array.isArray(events)) return [];
+    
+    return events.filter(event => {
+      // Kategori filtresi
+      if (selectedCategory !== 'Tümü' && event.category !== selectedCategory) {
+        return false;
+      }
+      return true;
     });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#1976d2']}
-          />
-        }
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Sosyal Etkinlik</Text>
-            {!userProfile ? (
-              <TouchableOpacity 
-                style={styles.loginButton}
-                onPress={navigateToLogin}
-              >
-                <Text style={styles.loginButtonText}>Giriş Yap</Text>
-              </TouchableOpacity>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar backgroundColor="#4A56E2" barStyle="light-content" />
+      <View style={styles.container}>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary.main]}
+            />
+          }
+          stickyHeaderIndices={[2]} // Kategori bölümünü sabitlemek için
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled={true}
+        >
+          {/* Hero Section */}
+          <View style={styles.heroSection}>
+            <Text style={styles.heroTitle}>Hobinize Uygun Etkinlikleri Keşfedin</Text>
+            <Text style={styles.heroSubtitle}>
+              İlgi alanlarınıza göre etkinlik bulun, yeni insanlarla tanışın, organizasyonlar oluşturun.
+            </Text>
+            <TouchableOpacity 
+              style={styles.createEventButton}
+              onPress={navigateToCreateEvent}
+            >
+              <Text style={styles.createEventButtonText}>Etkinlik Oluştur</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#777" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Etkinlik ara veya ilgi alanı gir..."
+              placeholderTextColor="#999"
+            />
+          </View>
+
+          {/* Kategoriler */}
+          <View style={styles.categoriesSection}>
+            <FlatList
+              data={categories}
+              keyExtractor={(item) => item.id.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              renderItem={renderCategoryItem}
+              contentContainerStyle={styles.categoriesList}
+            />
+          </View>
+
+          {/* Size Özel Etkinlikler */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <Ionicons name="flame" size={20} color="#FF7043" />
+                <Text style={styles.sectionTitle}>Size Özel Etkinlikler</Text>
+              </View>
+            </View>
+            
+            <Text style={styles.sectionSubtitle}>
+              {isAuthenticated 
+                ? 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
+                : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+            </Text>
+            
+            <View style={styles.divider} />
+            
+            {!isAuthenticated ? (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoText}>
+                  Hobilerinize uygun etkinlikleri görmek için giriş yapın
+                </Text>
+                <TouchableOpacity 
+                  style={styles.loginButtonSmall}
+                  onPress={navigateToLogin}
+                >
+                  <Text style={styles.loginButtonSmallText}>Giriş Yap</Text>
+                </TouchableOpacity>
+              </View>
+            ) : recommendedLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary.main} />
+              </View>
+            ) : recommendedEvents.length === 0 ? (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoText}>
+                  Hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.
+                </Text>
+              </View>
             ) : (
-              <View style={styles.headerActions}>
-                <TouchableOpacity 
-                  style={styles.headerButton}
-                  onPress={() => navigation.navigate('Profile')}
-                >
-                  <Ionicons name="person" size={20} color="#fff" />
-                  <Text style={styles.headerButtonText}>Profil</Text>
-                </TouchableOpacity>
+              <View style={styles.recommendedEventsContainer}>
+                <FlatList
+                  data={recommendedEvents}
+                  keyExtractor={(item) => item._id}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  renderItem={({ item }) => (
+                    <View style={styles.recommendedEventCardContainer}>
+                      <EventCard event={item} />
+                    </View>
+                  )}
+                  contentContainerStyle={styles.recommendedEventsList}
+                />
                 
-                <TouchableOpacity 
-                  style={styles.headerButton}
-                  onPress={() => signOut()}
-                >
-                  <Ionicons name="log-out" size={20} color="#fff" />
-                  <Text style={styles.headerButtonText}>Çıkış</Text>
-                </TouchableOpacity>
+                {recommendedEvents.length > 0 && (
+                  <TouchableOpacity 
+                    style={styles.viewAllButton}
+                    onPress={() => setSelectedCategory('Tümü')}
+                  >
+                    <Text style={styles.viewAllButtonText}>Tüm Etkinlikleri Görüntüle</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
-        </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-          <Text style={styles.searchText}>Etkinlik ara...</Text>
-        </View>
-
-        {/* Featured Events */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Öne Çıkan Etkinlikler</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>Tümünü Gör</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.eventScroll}
-          >
-            {[1, 2, 3].map((item) => (
-              <TouchableOpacity key={item} style={styles.eventCard}>
-                <Image
-                  source={{ uri: 'https://via.placeholder.com/200x150' }}
-                  style={styles.eventImage}
-                />
-                <View style={styles.eventOverlay} />
-                <View style={styles.eventInfo}>
-                  <Text style={styles.eventTitle}>Etkinlik {item}</Text>
-                  <View style={styles.eventDetails}>
-                    <Ionicons name="calendar" size={14} color="#fff" />
-                    <Text style={styles.eventDate}>23 Mart 2024</Text>
-                    <Ionicons name="location" size={14} color="#fff" style={styles.locationIcon} />
-                    <Text style={styles.eventLocation}>İstanbul</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Categories */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Kategoriler</Text>
-          <View style={styles.categoriesGrid}>
-            {[
-              { name: 'Müzik', icon: 'musical-notes' },
-              { name: 'Spor', icon: 'basketball' },
-              { name: 'Sanat', icon: 'color-palette' },
-              { name: 'Teknoloji', icon: 'laptop' }
-            ].map((category) => (
-              <TouchableOpacity key={category.name} style={styles.categoryCard}>
-                <View style={styles.categoryIconContainer}>
-                  <Ionicons name={category.icon} size={24} color="#1976d2" />
-                </View>
-                <Text style={styles.categoryTitle}>{category.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Upcoming Events */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Yaklaşan Etkinlikler</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>Tümünü Gör</Text>
-            </TouchableOpacity>
-          </View>
-          {[1, 2, 3].map((item) => (
-            <TouchableOpacity key={item} style={styles.upcomingEventCard}>
-              <Image
-                source={{ uri: 'https://via.placeholder.com/100x100' }}
-                style={styles.upcomingEventImage}
+          {/* Tabs */}
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity 
+              style={[styles.tab, tabValue === 0 && styles.activeTab]}
+              onPress={() => handleTabChange(0)}
+            >
+              <Ionicons 
+                name="calendar" 
+                size={20} 
+                color={tabValue === 0 ? colors.primary.main : '#777'} 
               />
-              <View style={styles.upcomingEventInfo}>
-                <Text style={styles.upcomingEventTitle}>Yaklaşan Etkinlik {item}</Text>
-                <View style={styles.upcomingEventDetails}>
-                  <View style={styles.eventDetail}>
-                    <Ionicons name="calendar" size={14} color="#666" />
-                    <Text style={styles.upcomingEventDate}>24 Mart 2024</Text>
-                  </View>
-                  <View style={styles.eventDetail}>
-                    <Ionicons name="location" size={14} color="#666" />
-                    <Text style={styles.upcomingEventLocation}>Ankara</Text>
-                  </View>
-                </View>
-              </View>
+              <Text 
+                style={[styles.tabText, tabValue === 0 && styles.activeTabText]}
+              >
+                Etkinlikler
+              </Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
+            
+            <TouchableOpacity 
+              style={[styles.tab, tabValue === 1 && styles.activeTab]}
+              onPress={() => handleTabChange(1)}
+            >
+              <Ionicons 
+                name="location" 
+                size={20} 
+                color={tabValue === 1 ? colors.primary.main : '#777'} 
+              />
+              <Text 
+                style={[styles.tabText, tabValue === 1 && styles.activeTabText]}
+              >
+                Yakınımdaki
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.tab, tabValue === 2 && styles.activeTab]}
+              onPress={() => handleTabChange(2)}
+            >
+              <Ionicons 
+                name="people" 
+                size={20} 
+                color={tabValue === 2 ? colors.primary.main : '#777'} 
+              />
+              <Text 
+                style={[styles.tabText, tabValue === 2 && styles.activeTabText]}
+              >
+                Arkadaşlarım
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Etkinlikler Başlığı */}
+          <View style={styles.eventsHeader}>
+            <Text style={styles.eventsTitle}>
+              {selectedCategory === 'Tümü' ? 'Tüm Etkinlikler' : `${selectedCategory} Etkinlikleri`}
+            </Text>
+            {!loading && (
+              <Text style={styles.eventCount}>
+                {pagination.total} etkinlik bulundu
+              </Text>
+            )}
+          </View>
+
+          {/* İlgi Alanları */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <Ionicons name="bookmark" size={20} color={colors.primary.main} />
+                <Text style={styles.sectionTitle}>İlgi Alanlarınız</Text>
+              </View>
+            </View>
+            
+            <View style={styles.interestsContainer}>
+              {userInterests.map(interest => (
+                <TouchableOpacity 
+                  key={interest} 
+                  style={styles.interestTag}
+                >
+                  <Text style={styles.interestTagText}>{interest}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.addInterestButton}>
+                <Text style={styles.addInterestText}>+ Düzenle</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+        
+        {/* Etkinlikler Listesi - Sayfalandırmalı */}
+        {loading && events.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary.main} />
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={getFilteredEvents()}
+            keyExtractor={(item) => item._id.toString()}
+            renderItem={renderEventItem}
+            contentContainerStyle={styles.eventsGrid}
+            showsVerticalScrollIndicator={false}
+            onEndReached={loadMoreEvents}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={renderFooter}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Bu kategoride şu anda etkinlik bulunmuyor.</Text>
+                <TouchableOpacity 
+                  style={styles.createEventButtonSmall}
+                  onPress={navigateToCreateEvent}
+                >
+                  <Text style={styles.createEventButtonSmallText}>Etkinlik Oluştur</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
-    paddingTop: 10,
-    paddingBottom: 20,
-    backgroundColor: '#1976d2',
+  container: {
+    flex: 1,
   },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  heroSection: {
+    padding: 24,
     alignItems: 'center',
-    paddingHorizontal: 16,
+    borderRadius: 0,
+    marginBottom: 16,
+    backgroundColor: '#4A56E2',
   },
-  headerTitle: {
-    fontSize: 28,
+  heroTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  loginButton: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  loginButtonText: {
-    color: '#1976d2',
-    fontWeight: '600',
+  heroSubtitle: {
     fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
   },
-  profileButton: {
-    padding: 4,
+  createEventButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  createEventButtonText: {
+    color: colors.primary.main,
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     margin: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 25,
-    elevation: 2,
+    borderRadius: 8,
+    padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   searchIcon: {
     marginRight: 8,
   },
-  searchText: {
-    color: '#666',
+  searchInput: {
+    flex: 1,
     fontSize: 16,
+    color: '#333',
   },
   section: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
     padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 8,
+    color: '#333',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#777',
+    marginBottom: 8,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 12,
+  },
+  infoCard: {
+    backgroundColor: '#e3f2fd',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  infoText: {
+    color: '#2196F3',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  loginButtonSmall: {
+    backgroundColor: colors.primary.main,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignSelf: 'center',
+  },
+  loginButtonSmallText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  loadingContainer: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  recommendedEventsContainer: {
+    marginTop: 8,
+  },
+  recommendedEventsList: {
+    paddingBottom: 8,
+  },
+  recommendedEventCardContainer: {
+    width: width * 0.7,
+    marginRight: 12,
+  },
+  viewAllButton: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  viewAllButtonText: {
+    color: colors.primary.main,
+    fontWeight: 'bold',
+  },
+  categoriesSection: {
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    zIndex: 1,
+  },
+  categoriesList: {
+    paddingHorizontal: 16,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  selectedCategoryItem: {
+    backgroundColor: colors.primary.main,
+  },
+  categoryText: {
+    marginLeft: 6,
+    color: '#333',
+    fontWeight: '500',
+  },
+  selectedCategoryText: {
+    color: '#fff',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+    overflow: 'hidden',
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary.main,
+  },
+  tabText: {
+    marginLeft: 4,
+    color: '#777',
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: colors.primary.main,
+  },
+  eventsHeader: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  eventsTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
   },
-  seeAllText: {
-    color: '#1976d2',
+  eventCount: {
+    color: '#777',
     fontSize: 14,
-    fontWeight: '500',
+    marginTop: 4,
   },
-  eventScroll: {
-    marginHorizontal: -16,
+  eventsGrid: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  eventCard: {
-    width: 280,
-    marginRight: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-  },
-  eventImage: {
-    width: '100%',
-    height: 180,
-  },
-  eventOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '50%',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  eventInfo: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-  },
-  eventTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 8,
-  },
-  eventDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  eventDate: {
-    fontSize: 14,
-    color: '#fff',
-    marginLeft: 4,
-    marginRight: 12,
-  },
-  locationIcon: {
-    marginLeft: 4,
-  },
-  eventLocation: {
-    fontSize: 14,
-    color: '#fff',
-    marginLeft: 4,
-  },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  categoryCard: {
-    width: '48%',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
+  eventCardContainer: {
     marginBottom: 16,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
-  categoryIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#e3f2fd',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  upcomingEventCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  upcomingEventImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-  },
-  upcomingEventInfo: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'center',
-  },
-  upcomingEventTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#333',
-  },
-  upcomingEventDetails: {
-    gap: 4,
-  },
-  eventDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  upcomingEventDate: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  upcomingEventLocation: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  recommendedUsersSection: {
+  errorContainer: {
+    margin: 16,
     padding: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  recommendedUsersList: {
-    paddingVertical: 10,
-  },
-  recommendedUserItem: {
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
     alignItems: 'center',
-    marginRight: 20,
-    width: 80,
-  },
-  recommendedUserName: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-    width: 80,
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
   },
   errorText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#f44336',
+    color: '#d32f2f',
     textAlign: 'center',
-    marginHorizontal: 20,
   },
-  retryButton: {
-    marginTop: 20,
+  emptyContainer: {
+    margin: 16,
+    padding: 24,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  emptyText: {
+    color: '#777',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  createEventButtonSmall: {
+    backgroundColor: colors.primary.main,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 25,
+    borderRadius: 6,
   },
-  retryButtonText: {
+  createEventButtonSmallText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
+    fontWeight: 'bold',
   },
-  noEventsContainer: {
-    flex: 1,
+  interestsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  interestTag: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  interestTagText: {
+    color: '#555',
+    fontSize: 14,
+  },
+  addInterestButton: {
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    borderStyle: 'dashed',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  addInterestText: {
+    color: colors.primary.main,
+    fontSize: 14,
+  },
+  footerLoader: {
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    marginTop: 50,
-  },
-  noEventsIcon: {
-    marginBottom: 20,
-  },
-  noEventsText: {
-    fontSize: 18,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  viewAllButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 25,
-  },
-  viewAllButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  eventsContainer: {
     padding: 16,
   },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 15,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerButtonText: {
-    color: '#fff',
+  footerText: {
+    marginLeft: 8,
+    color: '#666',
     fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
+  }
 });
 
 export default HomeScreen; 

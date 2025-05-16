@@ -147,19 +147,13 @@ const RegisterScreen = ({ navigation }) => {
       const response = await api.auth.register(registerData);
       
       if (response.data && response.data.success) {
-        // Kayıt başarılı, kullanıcıya e-posta doğrulama bildirimi göster
-        Alert.alert(
-          'Kayıt Başarılı',
-          'Hesabınız oluşturuldu. Lütfen e-posta adresinize gönderilen doğrulama bağlantısına tıklayarak hesabınızı aktifleştirin.',
-          [
-            {
-              text: 'Tamam',
-              onPress: () => navigation.navigate('Login', {
-                message: 'Lütfen giriş yapmadan önce e-posta adresinizi doğrulayın.'
-              })
-            }
-          ]
-        );
+        // Kayıt başarılı, kullanıcıyı her zaman email doğrulama ekranına yönlendir
+        
+        // E-posta doğrulama ekranına yönlendir
+        navigation.navigate('VerifyEmail', { 
+          email: email,
+          message: response.data.message || 'Lütfen e-posta adresinize gönderilen doğrulama kodunu girin'
+        });
       } else {
         setError(response.data?.message || 'Kayıt işlemi başarısız oldu');
       }

@@ -385,34 +385,40 @@ export const getUserByUsername = async (username) => {
 };
 
 /**
- * E-posta doğrulama kodunu doğrular
- * @param {Object} data - E-posta ve kod bilgisi {email, code}
+ * E-posta doğrulama kodunu doğrular ve kullanıcı kaydını tamamlar
+ * @param {Object} data - { email, code }
  * @returns {Promise<Object>}
  */
 export const verifyEmailCode = async (data) => {
   try {
-    console.log('Verifying email code for:', data.email);
+    console.log('E-posta doğrulama isteği gönderiliyor:', data);
     
-    const response = await axios.post(`${API_URL}/verify-email`, {
-      email: data.email,
-      code: data.code
-    });
+    const response = await axios.post(`${API_URL}/verify-email`, data);
     
-    console.log('Email verification response:', response.data);
+    console.log('Doğrulama yanıtı:', response.data);
     
-    // Doğrulama başarılıysa ve token varsa kaydet
-    if (response.data && response.data.success) {
-      if (response.data.accessToken) {
-        localStorage.setItem('token', response.data.accessToken);
-      }
+    // Doğrulama başarılıysa ve token döndüyse localStorage'a kaydet
+    if (response.data.success && response.data.accessToken) {
+      localStorage.setItem('token', response.data.accessToken);
+      
       if (response.data.refreshToken) {
         localStorage.setItem('refreshToken', response.data.refreshToken);
       }
+      
+      console.log('Doğrulama başarılı, token ve kullanıcı kaydedildi');
     }
     
     return response.data;
   } catch (error) {
-    console.error('Email verification error:', error.response?.data || error);
+    console.error('E-posta doğrulama hatası:', error);
+    
+    if (error.response?.data) {
+      return {
+        success: false,
+        message: error.response.data.message || 'Doğrulama işlemi başarısız oldu'
+      };
+    }
+    
     throw handleError(error);
   }
 };

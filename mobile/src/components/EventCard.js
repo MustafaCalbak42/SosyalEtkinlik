@@ -53,6 +53,39 @@ const EventCard = ({ event }) => {
     return `${dayName}, ${monthName} ${day} • ${hours}:${minutes} ${ampm}`;
   };
   
+  // Format location data
+  const formatLocation = (location) => {
+    // Eğer location bir string ise direkt kullan
+    if (typeof location === 'string') {
+      return location;
+    }
+    
+    // Eğer location bir nesne ise address kısmını kullan
+    if (location && typeof location === 'object') {
+      if (location.address) {
+        return location.address;
+      }
+      // Coordinates varsa ve address yoksa
+      if (location.coordinates && Array.isArray(location.coordinates) && location.coordinates.length >= 2) {
+        return `${location.coordinates[1]}, ${location.coordinates[0]}`;
+      }
+    }
+    
+    // Hiçbir format uygun değilse
+    return 'Konum belirtilmemiş';
+  };
+  
+  // Katılımcı sayısını güvenli şekilde hesapla
+  const getAttendeeCount = () => {
+    if (event.attendees && Array.isArray(event.attendees)) {
+      return event.attendees.length;
+    }
+    if (event.participants && Array.isArray(event.participants)) {
+      return event.participants.length;
+    }
+    return 0;
+  };
+  
   return (
     <TouchableOpacity 
       style={styles.card}
@@ -87,7 +120,7 @@ const EventCard = ({ event }) => {
         <View style={styles.detailItem}>
           <Icon name="map-marker" size={16} color="#666" />
           <Text style={styles.detailText} numberOfLines={1}>
-            {event.location}
+            {formatLocation(event.location)}
           </Text>
         </View>
         
@@ -95,7 +128,7 @@ const EventCard = ({ event }) => {
           <View style={styles.attendeesInfo}>
             <Icon name="account-group" size={16} color="#666" />
             <Text style={styles.attendeesText}>
-              {event.attendees?.length || 0} attending
+              {getAttendeeCount()} attending
             </Text>
           </View>
           

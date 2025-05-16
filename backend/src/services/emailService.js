@@ -131,6 +131,84 @@ const sendEmail = async (options) => {
 // Önbellek için doğrulama kodları ve şifre sıfırlama kodları
 const verificationStore = {
   resetCodes: {}, // resetCodes[email] = { code, expires, name }
+  userData: {},   // Geçici kullanıcı verileri
+};
+
+// Geçici kullanıcı verilerini sakla
+const storeVerificationData = (email, data) => {
+  try {
+    verificationStore.userData[email] = data;
+    console.log(`Geçici kullanıcı verisi saklandı: ${email}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`Geçici kullanıcı verisi saklanırken hata: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+};
+
+// Geçici kullanıcı verilerini getir
+const getVerificationData = (email) => {
+  return verificationStore.userData[email];
+};
+
+// Geçici kullanıcı verilerini temizle
+const clearVerificationData = (email) => {
+  delete verificationStore.userData[email];
+  console.log(`Geçici kullanıcı verisi temizlendi: ${email}`);
+};
+
+// Doğrulama kodu gönder
+const sendVerificationCode = async (email, code, name) => {
+  try {
+    console.log(`${email} adresine doğrulama kodu gönderme işlemi başlatıldı.`);
+    
+    // E-posta içeriği
+    const mailOptions = {
+      to: email,
+      subject: 'Hesap Doğrulama Kodu - Sosyal Etkinlik',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+          <h2 style="color: #333;">E-posta Adresinizi Doğrulayın</h2>
+          <p>Merhaba ${name || 'Değerli Kullanıcımız'},</p>
+          <p>Sosyal Etkinlik platformuna kaydolduğunuz için teşekkür ederiz. Hesabınızı aktifleştirmek için aşağıdaki kodu kullanın:</p>
+          <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; text-align: center;">
+            <h3 style="font-size: 24px; letter-spacing: 5px; margin: 0;">${code}</h3>
+          </div>
+          <p>Bu kod 30 dakika süreyle geçerlidir.</p>
+          <p>Eğer bu işlemi siz yapmadıysanız, lütfen bu e-postayı dikkate almayın.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="font-size: 12px; color: #777;">Bu otomatik bir e-postadır, lütfen cevaplamayın.</p>
+        </div>
+      `
+    };
+    
+    // E-postayı gönder
+    const emailResult = await sendEmail(mailOptions);
+    
+    if (!emailResult.success) {
+      console.error(`Doğrulama e-postası gönderimi başarısız: ${emailResult.error}`);
+      return {
+        success: false,
+        error: emailResult.error || 'E-posta gönderilemedi'
+      };
+    }
+    
+    console.log(`Doğrulama e-postası başarıyla gönderildi: ${email}`);
+    
+    // Geliştirme ortamında kullanmak için kodu da döndür
+    return {
+      success: true,
+      messageId: emailResult.messageId,
+      verificationCode: code
+    };
+  } catch (error) {
+    console.error('❌ Doğrulama e-postası gönderim hatası:', error);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 };
 
 // Cache olarak şifre sıfırlama kodunu saklama
@@ -347,5 +425,9 @@ module.exports = {
   sendPasswordResetEmail,
   sendVerificationEmail,
   isValidEmail,
-  verifyResetCode
+  verifyResetCode,
+  sendVerificationCode,
+  storeVerificationData,
+  getVerificationData,
+  clearVerificationData
 }; 

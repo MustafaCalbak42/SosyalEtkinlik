@@ -2,6 +2,7 @@ const Event = require('../models/Event');
 const Hobby = require('../models/Hobby');
 const User = require('../models/User');
 const { validationResult } = require('express-validator');
+const cleanupService = require('../services/cleanupService');
 
 // @desc    Yeni etkinlik oluştur
 // @route   POST /api/events
@@ -116,6 +117,12 @@ const createEvent = async (req, res) => {
       $push: { events: createdEvent._id }
     });
     console.log('Etkinlik organizatörün etkinlik listesine eklendi');
+
+    // Yeni etkinlik oluşturulduğunda, süresi dolmuş etkinlikleri temizle
+    // Arka planda asenkron olarak çalıştır, işlemin tamamlanmasını bekleme
+    cleanupService.cleanupExpiredEvents().catch(error => {
+      console.error('Etkinlik oluşturma sonrası temizleme hatası:', error);
+    });
 
     // Standart API yanıt formatını kullan
     res.status(201).json({
@@ -256,6 +263,13 @@ const updateEvent = async (req, res) => {
     if (status) event.status = status;
     
     const updatedEvent = await event.save();
+    
+    // Etkinlik güncellendikten sonra, süresi dolmuş etkinlikleri temizle
+    // Arka planda asenkron olarak çalıştır, işlemin tamamlanmasını bekleme
+    cleanupService.cleanupExpiredEvents().catch(error => {
+      console.error('Etkinlik güncelleme sonrası temizleme hatası:', error);
+    });
+    
     res.json(updatedEvent);
   } catch (error) {
     console.error('Etkinlik güncelleme hatası:', error);
@@ -303,6 +317,12 @@ const deleteEvent = async (req, res) => {
         $pull: { participatedEvents: event._id }
       });
     }
+    
+    // Etkinlik silindikten sonra, süresi dolmuş diğer etkinlikleri temizle
+    // Arka planda asenkron olarak çalıştır, işlemin tamamlanmasını bekleme
+    cleanupService.cleanupExpiredEvents().catch(error => {
+      console.error('Etkinlik silme sonrası temizleme hatası:', error);
+    });
     
     res.json({ message: 'Etkinlik silindi' });
   } catch (error) {
@@ -368,6 +388,12 @@ const joinEvent = async (req, res) => {
       $push: { participatedEvents: event._id }
     });
     
+    // Etkinliğe katılım sonrası, süresi dolmuş etkinlikleri temizle
+    // Arka planda asenkron olarak çalıştır, işlemin tamamlanmasını bekleme
+    cleanupService.cleanupExpiredEvents().catch(error => {
+      console.error('Etkinliğe katılım sonrası temizleme hatası:', error);
+    });
+    
     res.json({ message: 'Etkinliğe katıldınız' });
   } catch (error) {
     console.error('Etkinliğe katılma hatası:', error);
@@ -419,6 +445,12 @@ const leaveEvent = async (req, res) => {
     // Kullanıcının katıldığı etkinlikler listesinden kaldır
     await User.findByIdAndUpdate(req.user.id, {
       $pull: { participatedEvents: event._id }
+    });
+    
+    // Etkinlikten ayrılma sonrası, süresi dolmuş etkinlikleri temizle
+    // Arka planda asenkron olarak çalıştır, işlemin tamamlanmasını bekleme
+    cleanupService.cleanupExpiredEvents().catch(error => {
+      console.error('Etkinlikten ayrılma sonrası temizleme hatası:', error);
     });
     
     res.json({ message: 'Etkinlikten ayrıldınız' });
@@ -638,6 +670,39 @@ const getRecommendedEvents = async (req, res) => {
   }
 };
 
+// @desc    Süresi dolmuş etkinlikleri temizle (Admin endpoint)
+// @route   POST /api/events/cleanup
+// @access  Private/Admin
+const cleanupExpiredEvents = async (req, res) => {
+  try {
+    console.log('Manuel etkinlik temizleme isteği alındı');
+    
+    // Admin yetkisi kontrolü
+    if (!req.user || !req.user.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bu işlemi gerçekleştirmek için admin yetkisi gereklidir'
+      });
+    }
+    
+    // Temizleme işlemini başlat
+    const cleanupResult = await cleanupService.cleanupExpiredEvents();
+    
+    return res.status(200).json({
+      success: true,
+      message: `Etkinlik temizleme işlemi tamamlandı. ${cleanupResult.deletedCount} etkinlik silindi.`,
+      data: cleanupResult
+    });
+  } catch (error) {
+    console.error('Manuel etkinlik temizleme hatası:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Etkinlik temizleme işlemi sırasında bir hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'SERVER_ERROR'
+    });
+  }
+};
+
 module.exports = {
   createEvent,
   getEvents,
@@ -649,5 +714,6 @@ module.exports = {
   getEventParticipants,
   getNearbyEvents,
   getEventsByHobby,
-  getRecommendedEvents
+  getRecommendedEvents,
+  cleanupExpiredEvents
 }; 
