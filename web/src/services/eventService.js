@@ -161,9 +161,9 @@ export const leaveEvent = async (eventId) => {
 };
 
 // Kullanıcının hobilerine göre önerilen etkinlikleri getir
-export const getRecommendedEvents = async (page = 1, limit = 4) => {
+export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => {
   try {
-    console.log(`[eventService] Fetching recommended events based on user hobbies - page: ${page}, limit: ${limit}`);
+    console.log(`[eventService] Fetching recommended events based on user hobbies - page: ${page}, limit: ${limit}, city: ${city || 'Not specified'}`);
     
     // Kimlik doğrulama kontrolü
     const token = localStorage.getItem('token');
@@ -175,12 +175,51 @@ export const getRecommendedEvents = async (page = 1, limit = 4) => {
       };
     }
     
-    const response = await api.get(`/events/recommended?page=${page}&limit=${limit}`, {
+    // API'den önerilen etkinlikleri getir
+    // URL parametrelerini oluştur
+    let url = `/events/recommended?page=${page}&limit=${limit}`;
+    
+    // Şehir parametresi (eğer belirtilmişse)
+    if (city) {
+      url += `&city=${encodeURIComponent(city)}`;
+      console.log(`[eventService] Adding city filter: ${city}`);
+    }
+    
+    // İsteği gönder
+    const response = await api.get(url, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
     });
     
+    // Yanıt başarılı ise detaylı log göster
+    if (response.data && (response.data.success || Array.isArray(response.data))) {
+      const eventData = response.data.data || response.data;
+      const totalEvents = Array.isArray(eventData) ? eventData.length : 0;
+      
+      console.log(`[eventService] Successfully fetched ${totalEvents} recommended events`);
+      
+      // İl bazlı filtreleme yapılmış mı kontrol et
+      if (response.data.message && response.data.message.includes('ilinizdeki')) {
+        console.log('[eventService] Events filtered by user province:', response.data.message);
+      }
+      
+      // İlk birkaç etkinliğin hobi ve konum bilgisini göster
+      if (totalEvents > 0) {
+        const sampleEvents = eventData.slice(0, Math.min(3, totalEvents));
+        console.log('[eventService] Sample recommended events:', 
+          sampleEvents.map(event => ({
+            id: event._id,
+            title: event.title,
+            hobby: event.hobby?.name || 'No hobby',
+            category: event.hobby?.category || 'No category',
+            location: event.location?.address || 'No location'
+          }))
+        );
+      }
+    }
+    
+    // Yanıt formatlarını ele al (başarılı olması durumunda)
     if (response.data && response.data.success) {
       return response.data;
     } else if (response.data && Array.isArray(response.data)) {
@@ -203,6 +242,7 @@ export const getRecommendedEvents = async (page = 1, limit = 4) => {
     }
   } catch (error) {
     console.error('[eventService] Error fetching recommended events:', error);
+    console.error('[eventService] Error details:', error.response?.data || error.message);
     return {
       success: false,
       message: error.response?.data?.message || 'Önerilen etkinlikler yüklenirken bir hata oluştu'

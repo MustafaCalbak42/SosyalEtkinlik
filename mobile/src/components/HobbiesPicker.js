@@ -19,14 +19,41 @@ const HobbiesPicker = ({ value = [], onChange, error }) => {
         const response = await getAllHobbies();
         console.log('Hobiler yanıtı:', response);
         
-        if (Array.isArray(response)) {
-          if (response.length === 0) {
-            Alert.alert('Bilgi', 'Henüz hiç hobi eklenmemiş.');
+        // API yanıtını doğru şekilde işle
+        if (response) {
+          // Veri formatını kontrol et
+          if (response.success === true && Array.isArray(response.data)) {
+            // Standart başarılı yanıt formatı: {success, data[], message}
+            console.log('Standart yanıt formatı ile hobiler alındı:', response.data.length);
+            setHobbies(response.data);
+          } else if (Array.isArray(response)) {
+            // Doğrudan dizi gelmiş
+            console.log('Doğrudan dizi formatında hobiler alındı:', response.length);
+            setHobbies(response);
+          } else if (response.data) {
+            // Data içinde array veya obje kontrolü
+            if (Array.isArray(response.data)) {
+              console.log('Response.data dizisi formatında hobiler alındı:', response.data.length);
+              setHobbies(response.data);
+            } else if (Array.isArray(response.data.data)) {
+              // Nested data içinde dizi
+              console.log('Response.data.data dizisi formatında hobiler alındı:', response.data.data.length);
+              setHobbies(response.data.data);
+            } else if (response.data.hobbies && Array.isArray(response.data.hobbies)) {
+              // Hobbies anahtarı içinde dizi
+              console.log('Response.data.hobbies dizisi formatında hobiler alındı:', response.data.hobbies.length);
+              setHobbies(response.data.hobbies);
+            } else {
+              console.error('Hobiler beklenen formatta değil:', response.data);
+              Alert.alert('Hata', 'Hobiler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
+            }
+          } else {
+            console.error('Hobiler yanıtı geçersiz format:', response);
+            Alert.alert('Hata', 'Hobiler yüklenirken bir hata oluştu. Geçersiz yanıt formatı.');
           }
-          setHobbies(response);
         } else {
-          console.error('Hobiler beklenen formatta değil:', response);
-          Alert.alert('Hata', 'Hobiler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
+          console.error('Hobiler yanıtı boş:', response);
+          Alert.alert('Hata', 'Hobiler yüklenirken bir hata oluştu. Sunucudan yanıt alınamadı.');
         }
       } catch (err) {
         console.error('Hobiler yüklenirken hata:', err);

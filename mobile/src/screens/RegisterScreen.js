@@ -138,11 +138,18 @@ const RegisterScreen = ({ navigation }) => {
         email,
         password,
         fullName,
-        city,
+        // Şehir bilgisini location nesnesinin içinde gönder
+        location: {
+          type: 'Point',
+          coordinates: [0, 0], // Boş koordinatlar (daha sonra güncellenebilir)
+          address: city // Şehir bilgisini address alanına ekle
+        },
         bio: bio || '',
         hobbies: hobbies.map(hobby => typeof hobby === 'object' ? hobby._id : hobby),
         interests: interests || []
       };
+      
+      console.log('Gönderilen kayıt verisi:', JSON.stringify(registerData, null, 2));
       
       const response = await api.auth.register(registerData);
       

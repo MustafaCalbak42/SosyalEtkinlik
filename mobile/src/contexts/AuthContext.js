@@ -36,10 +36,20 @@ export const AuthProvider = ({ children }) => {
   const fetchUserProfile = async () => {
     try {
       const response = await apiClient.users.getCurrentUser();
+      console.log('AuthContext - User Profile API response:', JSON.stringify(response.data, null, 2));
+      
       if (response.data) {
-        setUserProfile(response.data);
-        return { success: true };
+        // API yanıt yapısını kontrol et (response.data.user, response.data.data veya doğrudan response.data)
+        const userData = response.data.user || response.data.data || response.data;
+        
+        if (userData) {
+          console.log('AuthContext - Setting user profile:', JSON.stringify(userData, null, 2));
+          setUserProfile(userData);
+          return { success: true };
+        }
       }
+      
+      console.error('AuthContext - Invalid profile data format:', response.data);
       return { success: false, message: 'Kullanıcı profili yüklenemedi' };
     } catch (error) {
       console.error('Error fetching user profile:', error);

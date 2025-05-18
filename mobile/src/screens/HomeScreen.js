@@ -42,8 +42,7 @@ const HomeScreen = ({ navigation }) => {
     pages: 1
   });
 
-  const { isAuthenticated, user } = useAuth();
-  const userProfile = user;
+  const { isLoggedIn, userProfile } = useAuth();
   
   // Dummy kategoriler
   const categories = [
@@ -68,10 +67,11 @@ const HomeScreen = ({ navigation }) => {
     });
     fetchEvents(1, pagination.limit, selectedCategory);
     
-    if (isAuthenticated) {
+    if (isLoggedIn) {
+      console.log('[HomeScreen] Kullanıcı giriş yaptı, önerilen etkinlikler yükleniyor...');
       fetchRecommendedEvents();
     }
-  }, [isAuthenticated, selectedCategory]);
+  }, [isLoggedIn, selectedCategory]);
 
   // Etkinlikleri getir
   const fetchEvents = async (page = 1, limit = pagination.limit, category = selectedCategory) => {
@@ -79,7 +79,9 @@ const HomeScreen = ({ navigation }) => {
     setError('');
     
     try {
-      const response = await getAllEvents(page, limit, category);
+      // Kategori 'Tümü' ise API'ye kategori parametresi gönderme
+      const categoryParam = category === 'Tümü' ? null : category;
+      const response = await getAllEvents(page, limit, categoryParam);
       
       if (response && response.success) {
         // API'den gelen verileri doğrula
@@ -87,15 +89,11 @@ const HomeScreen = ({ navigation }) => {
           event && typeof event === 'object' && event._id
         );
         
-        // Sayfa 1'se yeniden başlat, değilse mevcut listeye ekle
-        if (page === 1) {
-          setEvents(validEvents);
-        } else {
-          setEvents(prevEvents => [...prevEvents, ...validEvents]);
-        }
+        // Her sayfa değişikliğinde, veri setini yenile (artık sonsuz kaydırma yapmıyoruz)
+        setEvents(validEvents);
         
         // Popüler etkinlikleri ayarla (en çok katılımcısı olanlar)
-        if (page === 1 && validEvents.length > 0) {
+        if (validEvents.length > 0) {
           const sorted = [...validEvents].sort((a, b) => {
             const aCount = a.participants?.length || a.attendees?.length || 0;
             const bCount = b.participants?.length || b.attendees?.length || 0;
@@ -128,13 +126,47 @@ const HomeScreen = ({ navigation }) => {
     setRecommendedLoading(true);
     
     try {
-      const response = await getRecommendedEvents(1, 4);
+      console.log('[HomeScreen] Kullanıcı profili:', userProfile);
+      
+      // Kullanıcının şehir/il bilgisini al
+      let userCity = null;
+      if (userProfile && userProfile.location) {
+        // Konum bilgisi farklı formatlarda olabilir
+        if (typeof userProfile.location === 'string') {
+          // Doğrudan şehir adı ise
+          userCity = userProfile.location;
+        } else if (userProfile.location.city) {
+          // Nesne içinde city alanı varsa
+          userCity = userProfile.location.city;
+        } else if (userProfile.location.address) {
+          // Adres bilgisi varsa (il adını çıkarmaya çalış)
+          const addressParts = userProfile.location.address.split(',');
+          if (addressParts.length > 0) {
+            // İl adı genellikle ilk parçadır - Türkiye adres formatına göre
+            userCity = addressParts[0].trim();
+          } else {
+            userCity = userProfile.location.address.trim();
+          }
+        }
+      }
+      
+      console.log(`[HomeScreen] Kullanıcının ili: ${userCity || 'Bilinmiyor'}`);
+      
+      // Şehir bilgisini getRecommendedEvents fonksiyonuna aktar
+      const response = await getRecommendedEvents(1, 4, userCity);
       
       if (response && response.success) {
         // API'den gelen verileri doğrula
         const validEvents = (response.data || []).filter(event => 
           event && typeof event === 'object' && event._id
         );
+        console.log(`[HomeScreen] ${validEvents.length} önerilen etkinlik yüklendi`);
+        
+        // İl bazlı mı kontrol et
+        if (response.message && response.message.includes('ilinizdeki')) {
+          console.log('[HomeScreen] Etkinlikler il bazlı filtrelendi:', response.message);
+        }
+        
         setRecommendedEvents(validEvents);
       } else {
         console.warn('Önerilen etkinlikler yüklenemedi:', response?.message);
@@ -149,6 +181,7 @@ const HomeScreen = ({ navigation }) => {
   // Yenileme işlemi
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    // Sayfa 1'e dön ve verileri yenile
     setPagination({
       ...pagination,
       page: 1
@@ -156,11 +189,11 @@ const HomeScreen = ({ navigation }) => {
     
     Promise.all([
       fetchEvents(1, pagination.limit, selectedCategory),
-      isAuthenticated ? fetchRecommendedEvents() : Promise.resolve()
+      isLoggedIn ? fetchRecommendedEvents() : Promise.resolve()
     ]).finally(() => {
       setRefreshing(false);
     });
-  }, [isAuthenticated, selectedCategory, pagination.limit]);
+  }, [isLoggedIn, selectedCategory, pagination.limit]);
 
   // Daha fazla etkinlik yükle
   const loadMoreEvents = () => {
@@ -192,7 +225,7 @@ const HomeScreen = ({ navigation }) => {
 
   // Etkinlik oluşturma sayfasına yönlendir
   const navigateToCreateEvent = () => {
-    if (isAuthenticated) {
+    if (isLoggedIn) {
       navigation.navigate('CreateEvent');
     } else {
       navigateToLogin();
@@ -204,276 +237,463 @@ const HomeScreen = ({ navigation }) => {
     setTabValue(index);
   };
   
-  // Kategori geçişlerini render et
-  const renderCategoryItem = ({ item }) => (
-    <TouchableOpacity 
-      style={[
-        styles.categoryItem,
-        selectedCategory === item.name && styles.selectedCategoryItem
-      ]}
-      onPress={() => setSelectedCategory(item.name)}
-    >
-      <Ionicons 
-        name={item.icon} 
-        size={22} 
-        color={selectedCategory === item.name ? '#fff' : colors.primary.main} 
-      />
-      <Text 
-        style={[
-          styles.categoryText,
-          selectedCategory === item.name && styles.selectedCategoryText
-        ]}
+  // Kategoriler için düz görünüm oluşturma
+  const renderCategories = () => {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoriesList}
       >
-        {item.name}
-      </Text>
-    </TouchableOpacity>
-  );
+        {categories.map((item) => (
+          <TouchableOpacity 
+            key={item.id}
+            style={[
+              styles.categoryItem,
+              selectedCategory === item.name && styles.selectedCategoryItem
+            ]}
+            onPress={() => setSelectedCategory(item.name)}
+          >
+            <Ionicons 
+              name={item.icon} 
+              size={22} 
+              color={selectedCategory === item.name ? '#fff' : colors.primary.main} 
+            />
+            <Text 
+              style={[
+                styles.categoryText,
+                selectedCategory === item.name && styles.selectedCategoryText
+              ]}
+            >
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
+  };
 
   // Etkinlik listesini render et
-  const renderEventItem = ({ item }) => (
-    <View style={styles.eventCardContainer}>
-      <EventCard event={item} />
-    </View>
-  );
+  const renderEventItem = ({ item }) => {
+    console.log(`[EventItem] Etkinlik: ${item.title}, Hobi: ${item.hobby?.name || 'Bilinmiyor'}, Kategori: ${item.hobby?.category || item.category || 'Bilinmiyor'}`);
+    return (
+      <View style={styles.eventCardContainer}>
+        <EventCard event={item} />
+      </View>
+    );
+  };
 
   // Kategori filtresi güvenli şekilde uygula
   const getFilteredEvents = () => {
     if (!events || !Array.isArray(events)) return [];
     
+    // Tümü seçiliyse filtreleme yapmadan tüm etkinlikleri döndür
+    if (selectedCategory === 'Tümü') {
+      return events;
+    }
+    
+    console.log(`[HomeScreen] ${selectedCategory} için etkinlikler filtreleniyor`);
+    console.log('[HomeScreen] İlk 3 etkinliğin hobi bilgileri:', events.slice(0, 3).map(event => ({
+      title: event.title,
+      hobbyName: event.hobby?.name,
+      hobbyCategory: event.hobby?.category,
+      category: event.category
+    })));
+    
+    // Kategori filtrelemesi yap
     return events.filter(event => {
-      // Kategori filtresi
-      if (selectedCategory !== 'Tümü' && event.category !== selectedCategory) {
-        return false;
+      // Normalde backend'den olması gereken filtremeyi öncelikle kontrol et
+      // Bu, backend kategoriye göre filtrelemenin yeterli olmadığı durumda ikincil filtre olarak çalışır
+      
+      // 1. İlk olarak hobby objesi içinde category alanını kontrol et (en güvenilir yöntem)
+      if (event.hobby && typeof event.hobby === 'object' && event.hobby.category) {
+        const hobbyCategory = event.hobby.category.trim().toLowerCase();
+        const selectedCategoryLower = selectedCategory.trim().toLowerCase();
+        
+        if (hobbyCategory === selectedCategoryLower) {
+          return true;
+        }
       }
-      return true;
+      
+      // 2. Eğer hobby objesi içinde kategori yoksa, hobby adını kontrol et
+      // Bazı hobi adları kategori olarak da kullanılabiliyor
+      if (event.hobby && typeof event.hobby === 'object' && event.hobby.name) {
+        const hobbyName = event.hobby.name.trim().toLowerCase();
+        const selectedCategoryLower = selectedCategory.trim().toLowerCase();
+        
+        if (hobbyName === selectedCategoryLower) {
+          return true;
+        }
+      }
+      
+      // 3. Eski API formatı için düz category alanını kontrol et
+      if (event.category) {
+        const categoryField = event.category.trim().toLowerCase();
+        const selectedCategoryLower = selectedCategory.trim().toLowerCase();
+        
+        if (categoryField === selectedCategoryLower) {
+          return true;
+        }
+      }
+      
+      // 4. Son olarak hobbyName alanını kontrol et
+      if (event.hobbyName) {
+        const hobbyNameField = event.hobbyName.trim().toLowerCase();
+        const selectedCategoryLower = selectedCategory.trim().toLowerCase();
+        
+        if (hobbyNameField === selectedCategoryLower) {
+          return true;
+        }
+      }
+      
+      // Hiçbir kriter eşleşmedi, bu etkinliği filtrelenmiş listede gösterme
+      return false;
     });
   };
+
+  // Önerilen etkinlikler listesini yatay olarak göster
+  const renderRecommendedEvents = () => {
+    if (!isLoggedIn) {
+      return (
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            Hobilerinize uygun etkinlikleri görmek için giriş yapın
+          </Text>
+          <TouchableOpacity 
+            style={styles.loginButtonSmall}
+            onPress={navigateToLogin}
+          >
+            <Text style={styles.loginButtonSmallText}>Giriş Yap</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (recommendedLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={colors.primary.main} />
+        </View>
+      );
+    }
+
+    if (recommendedEvents.length === 0) {
+      return (
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            {userProfile && userProfile.city 
+              ? `${userProfile.city} ilinde hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.` 
+              : 'Hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.'}
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.recommendedEventsList}
+      >
+        {recommendedEvents.map((item) => (
+          <View key={item._id} style={styles.recommendedEventCardContainer}>
+            <EventCard event={item} />
+          </View>
+        ))}
+      </ScrollView>
+    );
+  };
+
+  // Ana ekran içeriklerini header'a render et
+  const renderHeader = () => {
+    return (
+      <>
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <Text style={styles.heroTitle}>Hobinize Uygun Etkinlikleri Keşfedin</Text>
+          <Text style={styles.heroSubtitle}>
+            İlgi alanlarınıza göre etkinlik bulun, yeni insanlarla tanışın, organizasyonlar oluşturun.
+          </Text>
+          <TouchableOpacity 
+            style={styles.createEventButton}
+            onPress={navigateToCreateEvent}
+          >
+            <Text style={styles.createEventButtonText}>Etkinlik Oluştur</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#777" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Etkinlik ara veya ilgi alanı gir..."
+            placeholderTextColor="#999"
+          />
+        </View>
+
+        {/* Kategoriler */}
+        <View style={styles.categoriesSection}>
+          {renderCategories()}
+        </View>
+
+        {/* Size Özel Etkinlikler */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <Ionicons name="flame" size={20} color="#FF7043" />
+              <Text style={styles.sectionTitle}>
+                {isLoggedIn && userProfile && userProfile.city 
+                  ? `${userProfile.city} İlindeki Etkinlikler` 
+                  : 'Size Özel Etkinlikler'}
+              </Text>
+            </View>
+          </View>
+          
+          <Text style={styles.sectionSubtitle}>
+            {isLoggedIn 
+              ? userProfile && userProfile.city 
+                ? `${userProfile.city} ili ve ilgi alanlarınıza göre önerilen etkinlikler`
+                : 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
+              : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+          </Text>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.recommendedEventsContainer}>
+            {renderRecommendedEvents()}
+            
+            {recommendedEvents.length > 0 && (
+              <TouchableOpacity 
+                style={styles.viewAllButton}
+                onPress={() => setSelectedCategory('Tümü')}
+              >
+                <Text style={styles.viewAllButtonText}>Tüm Etkinlikleri Görüntüle</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 0 && styles.activeTab]}
+            onPress={() => handleTabChange(0)}
+          >
+            <Ionicons 
+              name="calendar" 
+              size={20} 
+              color={tabValue === 0 ? colors.primary.main : '#777'} 
+            />
+            <Text 
+              style={[styles.tabText, tabValue === 0 && styles.activeTabText]}
+            >
+              Etkinlikler
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 1 && styles.activeTab]}
+            onPress={() => handleTabChange(1)}
+          >
+            <Ionicons 
+              name="location" 
+              size={20} 
+              color={tabValue === 1 ? colors.primary.main : '#777'} 
+            />
+            <Text 
+              style={[styles.tabText, tabValue === 1 && styles.activeTabText]}
+            >
+              Yakınımdaki
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 2 && styles.activeTab]}
+            onPress={() => handleTabChange(2)}
+          >
+            <Ionicons 
+              name="people" 
+              size={20} 
+              color={tabValue === 2 ? colors.primary.main : '#777'} 
+            />
+            <Text 
+              style={[styles.tabText, tabValue === 2 && styles.activeTabText]}
+            >
+              Arkadaşlarım
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Etkinlikler Başlığı */}
+        <View style={styles.eventsHeader}>
+          <Text style={styles.eventsTitle}>
+            {selectedCategory === 'Tümü' ? 'Tüm Etkinlikler' : `${selectedCategory} Etkinlikleri`}
+          </Text>
+          {!loading && (
+            <Text style={styles.eventCount}>
+              {pagination.total} etkinlik bulundu
+            </Text>
+          )}
+        </View>
+
+        {/* İlgi Alanları */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <Ionicons name="bookmark" size={20} color={colors.primary.main} />
+              <Text style={styles.sectionTitle}>İlgi Alanlarınız</Text>
+            </View>
+          </View>
+          
+          <View style={styles.interestsContainer}>
+            {userInterests.map(interest => (
+              <TouchableOpacity 
+                key={interest} 
+                style={styles.interestTag}
+              >
+                <Text style={styles.interestTagText}>{interest}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.addInterestButton}>
+              <Text style={styles.addInterestText}>+ Düzenle</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
+    );
+  };
+
+  // Sayfalandırma Komponenti
+  const Pagination = () => {
+    // Gösterilecek sayfa sayısı (sayfa numarası butonları)
+    const pageButtonsToShow = 5;
+    const currentPage = pagination.page;
+    const totalPages = pagination.pages;
+    
+    // Kullanıcı henüz yüklenmemişse veya tek sayfa varsa sayfalandırmayı gösterme
+    if (loading || totalPages <= 1) {
+      return null;
+    }
+    
+    // Hangi sayfa numaralarını göstereceğimizi hesapla
+    const calculatePageNumbers = () => {
+      // Toplam sayfa sayısı gösterilecek sayfa sayısından az ise hepsini göster
+      if (totalPages <= pageButtonsToShow) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+      }
+      
+      // Aksi halde, mevcut sayfayı ortada tutmaya çalış
+      let start = Math.max(currentPage - Math.floor(pageButtonsToShow / 2), 1);
+      let end = start + pageButtonsToShow - 1;
+      
+      // Eğer son sayfa toplam sayfa sayısını aşıyorsa, düzelt
+      if (end > totalPages) {
+        end = totalPages;
+        start = Math.max(end - pageButtonsToShow + 1, 1);
+      }
+      
+      return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    };
+    
+    // Sayfa değiştirme işlemi
+    const handlePageChange = (page) => {
+      if (page === currentPage || page < 1 || page > totalPages) {
+        return;
+      }
+      
+      // Sayfayı değiştir ve verileri yükle
+      setPagination({
+        ...pagination,
+        page: page
+      });
+      fetchEvents(page, pagination.limit, selectedCategory);
+      
+      // Listeyi en başa kaydır
+      if (flatListRef.current) {
+        flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+      }
+    };
+    
+    const pageNumbers = calculatePageNumbers();
+    
+    return (
+      <View style={styles.paginationContainer}>
+        {/* Önceki Sayfa Butonu */}
+        <TouchableOpacity
+          style={[
+            styles.paginationButton,
+            currentPage === 1 ? styles.paginationButtonDisabled : null
+          ]}
+          onPress={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          <Ionicons name="chevron-back" size={16} color={currentPage === 1 ? "#999" : "#333"} />
+        </TouchableOpacity>
+        
+        {/* Sayfa Numaraları */}
+        {pageNumbers.map(pageNumber => (
+          <TouchableOpacity
+            key={pageNumber}
+            style={[
+              styles.paginationButton,
+              currentPage === pageNumber ? styles.paginationButtonActive : null
+            ]}
+            onPress={() => handlePageChange(pageNumber)}
+          >
+            <Text
+              style={[
+                styles.paginationButtonText,
+                currentPage === pageNumber ? styles.paginationButtonTextActive : null
+              ]}
+            >
+              {pageNumber}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        
+        {/* Sonraki Sayfa Butonu */}
+        <TouchableOpacity
+          style={[
+            styles.paginationButton,
+            currentPage === totalPages ? styles.paginationButtonDisabled : null
+          ]}
+          onPress={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+        >
+          <Ionicons name="chevron-forward" size={16} color={currentPage === totalPages ? "#999" : "#333"} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const flatListRef = React.useRef(null);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar backgroundColor="#4A56E2" barStyle="light-content" />
-      <View style={styles.container}>
-        <ScrollView
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[colors.primary.main]}
-            />
-          }
-          stickyHeaderIndices={[2]} // Kategori bölümünü sabitlemek için
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={true}
-        >
-          {/* Hero Section */}
-          <View style={styles.heroSection}>
-            <Text style={styles.heroTitle}>Hobinize Uygun Etkinlikleri Keşfedin</Text>
-            <Text style={styles.heroSubtitle}>
-              İlgi alanlarınıza göre etkinlik bulun, yeni insanlarla tanışın, organizasyonlar oluşturun.
-            </Text>
-            <TouchableOpacity 
-              style={styles.createEventButton}
-              onPress={navigateToCreateEvent}
-            >
-              <Text style={styles.createEventButtonText}>Etkinlik Oluştur</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color="#777" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Etkinlik ara veya ilgi alanı gir..."
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          {/* Kategoriler */}
-          <View style={styles.categoriesSection}>
-            <FlatList
-              data={categories}
-              keyExtractor={(item) => item.id.toString()}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              renderItem={renderCategoryItem}
-              contentContainerStyle={styles.categoriesList}
-            />
-          </View>
-
-          {/* Size Özel Etkinlikler */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleContainer}>
-                <Ionicons name="flame" size={20} color="#FF7043" />
-                <Text style={styles.sectionTitle}>Size Özel Etkinlikler</Text>
-              </View>
-            </View>
-            
-            <Text style={styles.sectionSubtitle}>
-              {isAuthenticated 
-                ? 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
-                : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
-            </Text>
-            
-            <View style={styles.divider} />
-            
-            {!isAuthenticated ? (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoText}>
-                  Hobilerinize uygun etkinlikleri görmek için giriş yapın
-                </Text>
-                <TouchableOpacity 
-                  style={styles.loginButtonSmall}
-                  onPress={navigateToLogin}
-                >
-                  <Text style={styles.loginButtonSmallText}>Giriş Yap</Text>
-                </TouchableOpacity>
-              </View>
-            ) : recommendedLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary.main} />
-              </View>
-            ) : recommendedEvents.length === 0 ? (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoText}>
-                  Hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.recommendedEventsContainer}>
-                <FlatList
-                  data={recommendedEvents}
-                  keyExtractor={(item) => item._id}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  renderItem={({ item }) => (
-                    <View style={styles.recommendedEventCardContainer}>
-                      <EventCard event={item} />
-                    </View>
-                  )}
-                  contentContainerStyle={styles.recommendedEventsList}
-                />
-                
-                {recommendedEvents.length > 0 && (
-                  <TouchableOpacity 
-                    style={styles.viewAllButton}
-                    onPress={() => setSelectedCategory('Tümü')}
-                  >
-                    <Text style={styles.viewAllButtonText}>Tüm Etkinlikleri Görüntüle</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-
-          {/* Tabs */}
-          <View style={styles.tabsContainer}>
-            <TouchableOpacity 
-              style={[styles.tab, tabValue === 0 && styles.activeTab]}
-              onPress={() => handleTabChange(0)}
-            >
-              <Ionicons 
-                name="calendar" 
-                size={20} 
-                color={tabValue === 0 ? colors.primary.main : '#777'} 
-              />
-              <Text 
-                style={[styles.tabText, tabValue === 0 && styles.activeTabText]}
-              >
-                Etkinlikler
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.tab, tabValue === 1 && styles.activeTab]}
-              onPress={() => handleTabChange(1)}
-            >
-              <Ionicons 
-                name="location" 
-                size={20} 
-                color={tabValue === 1 ? colors.primary.main : '#777'} 
-              />
-              <Text 
-                style={[styles.tabText, tabValue === 1 && styles.activeTabText]}
-              >
-                Yakınımdaki
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.tab, tabValue === 2 && styles.activeTab]}
-              onPress={() => handleTabChange(2)}
-            >
-              <Ionicons 
-                name="people" 
-                size={20} 
-                color={tabValue === 2 ? colors.primary.main : '#777'} 
-              />
-              <Text 
-                style={[styles.tabText, tabValue === 2 && styles.activeTabText]}
-              >
-                Arkadaşlarım
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Etkinlikler Başlığı */}
-          <View style={styles.eventsHeader}>
-            <Text style={styles.eventsTitle}>
-              {selectedCategory === 'Tümü' ? 'Tüm Etkinlikler' : `${selectedCategory} Etkinlikleri`}
-            </Text>
-            {!loading && (
-              <Text style={styles.eventCount}>
-                {pagination.total} etkinlik bulundu
-              </Text>
-            )}
-          </View>
-
-          {/* İlgi Alanları */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleContainer}>
-                <Ionicons name="bookmark" size={20} color={colors.primary.main} />
-                <Text style={styles.sectionTitle}>İlgi Alanlarınız</Text>
-              </View>
-            </View>
-            
-            <View style={styles.interestsContainer}>
-              {userInterests.map(interest => (
-                <TouchableOpacity 
-                  key={interest} 
-                  style={styles.interestTag}
-                >
-                  <Text style={styles.interestTagText}>{interest}</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity style={styles.addInterestButton}>
-                <Text style={styles.addInterestText}>+ Düzenle</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-        
-        {/* Etkinlikler Listesi - Sayfalandırmalı */}
-        {loading && events.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary.main} />
-          </View>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : (
+      {loading && events.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary.main} />
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
           <FlatList
+            ref={flatListRef}
             data={getFilteredEvents()}
             keyExtractor={(item) => item._id.toString()}
             renderItem={renderEventItem}
             contentContainerStyle={styles.eventsGrid}
             showsVerticalScrollIndicator={false}
-            onEndReached={loadMoreEvents}
-            onEndReachedThreshold={0.3}
+            ListHeaderComponent={renderHeader}
             ListFooterComponent={renderFooter}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>Bu kategoride şu anda etkinlik bulunmuyor.</Text>
@@ -486,8 +706,17 @@ const HomeScreen = ({ navigation }) => {
               </View>
             }
           />
-        )}
-      </View>
+          <Pagination />
+        </View>
+      )}
+      
+      {/* Etkinlik Oluşturma Butonu - FAB */}
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={navigateToCreateEvent}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -813,7 +1042,59 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     color: '#666',
     fontSize: 14,
-  }
+  },
+  fab: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    right: 20,
+    bottom: 20,
+    backgroundColor: colors.primary.main,
+    borderRadius: 28,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    zIndex: 999,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  paginationButton: {
+    minWidth: 40,
+    height: 40,
+    borderRadius: 20,
+    marginHorizontal: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  paginationButtonActive: {
+    backgroundColor: colors.primary.main,
+  },
+  paginationButtonDisabled: {
+    backgroundColor: '#f0f0f0',
+    opacity: 0.7,
+  },
+  paginationButtonText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  paginationButtonTextActive: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
 
 export default HomeScreen; 

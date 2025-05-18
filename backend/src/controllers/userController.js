@@ -70,6 +70,35 @@ const registerUser = async (req, res) => {
 
     // Yeni kullanıcı oluştur
     console.log(`Yeni kullanıcı oluşturuluyor: ${username}, ${email}`);
+    
+    // Location verisini kontrol et ve düzenle
+    let location = {
+      type: 'Point',
+      coordinates: [0, 0],
+      address: ''
+    };
+    
+    if (req.body.location) {
+      console.log('Gelen konum bilgisi:', req.body.location);
+      
+      if (typeof req.body.location === 'string') {
+        // Eğer sadece string olarak geldiyse (eski istemciler için)
+        location.address = req.body.location;
+      } else if (typeof req.body.location === 'object') {
+        // Yeni yapı - nesne olarak geliyorsa
+        location = {
+          type: req.body.location.type || 'Point',
+          coordinates: req.body.location.coordinates || [0, 0],
+          address: req.body.location.address || ''
+        };
+      }
+    } else if (req.body.city) {
+      // Eski istemciler için city alanını kontrol et
+      location.address = req.body.city;
+    }
+    
+    console.log('Kullanıcı için ayarlanan konum:', location);
+    
     const user = new User({
       username,
       email,
@@ -84,11 +113,7 @@ const registerUser = async (req, res) => {
       bio: req.body.bio || '',
       hobbies: req.body.hobbies || [],
       interests: req.body.interests || [],
-      location: req.body.location || {
-        type: 'Point',
-        coordinates: [0, 0],
-        address: ''
-      }
+      location: location
     });
     
     console.log('Kullanıcı oluşturuldu, hobiler:', req.body.hobbies);
@@ -424,11 +449,30 @@ const updateUserProfile = async (req, res) => {
     if (interests) user.interests = interests;
     
     // Konum bilgisi varsa güncelle
-    if (location && location.coordinates && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
-      user.location = {
-        type: 'Point',
-        coordinates: location.coordinates
-      };
+    if (location) {
+      console.log('Profil güncellemede gelen konum bilgisi:', location);
+      
+      // Konum nesnesinin yapısını kontrol et
+      if (typeof location === 'string') {
+        // Eğer location bir string ise, adres olarak kullan
+        user.location = {
+          type: 'Point',
+          coordinates: [0, 0],
+          address: location
+        };
+      } else if (typeof location === 'object') {
+        // Location bir nesne ise
+        const locationUpdate = {
+          type: location.type || 'Point',
+          coordinates: (location.coordinates && Array.isArray(location.coordinates) && location.coordinates.length === 2) 
+            ? location.coordinates 
+            : [0, 0],
+          address: location.address || ''
+        };
+        
+        user.location = locationUpdate;
+        console.log('Güncellenen konum bilgisi:', locationUpdate);
+      }
     }
 
     // Son aktivite zamanını güncelle

@@ -11,6 +11,9 @@ import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
 
+// Bileşenler
+import NetworkMonitor from '../components/NetworkMonitor';
+
 const Stack = createStackNavigator();
 
 const AppNavigator = ({ linking }) => {
@@ -29,6 +32,7 @@ const AppNavigator = ({ linking }) => {
           screens: {
             Home: 'home',
             Profile: 'profile',
+            Settings: 'settings',
           }
         },
         Auth: {
@@ -78,6 +82,7 @@ const AppNavigator = ({ linking }) => {
       <NavigationContainer linking={linkingConfig}>
         <StatusBar backgroundColor="#1976d2" barStyle="light-content" />
         <AuthConsumer />
+        <NetworkMonitor />
       </NavigationContainer>
     </AuthProvider>
   );

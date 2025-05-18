@@ -18,7 +18,19 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sosyaletkinlik.app"
+      "bundleIdentifier": "com.sosyaletkinlik.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "192.168.1.36": {
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
+      }
     },
     "android": {
       "backgroundColor": "#1976d2",
@@ -26,7 +38,13 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1976d2"
-      }
+      },
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "allowBackup": true,
+      "usesCleartextTraffic": true
     },
     "web": {},
     "scheme": "sosyaletkinlik",
@@ -36,6 +54,9 @@
       }
     },
     "owner": "sosyaletkinlik",
-    "hostUri": "10.196.204.140"
+    "hostUri": "192.168.1.36",
+    "network": {
+      "allowCleartextTraffic": true
+    }
   }
 } 

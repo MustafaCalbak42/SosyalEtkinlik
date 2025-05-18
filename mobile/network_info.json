@@ -1,0 +1,26 @@
+{
+  "ipAddresses": [
+    {
+      "address": "192.168.56.1",
+      "interfaceName": "Ethernet 3",
+      "netmask": "255.255.255.0"
+    },
+    {
+      "address": "192.168.137.1",
+      "interfaceName": "Yerel Ağ Bağlantısı* 10",
+      "netmask": "255.255.255.0"
+    },
+    {
+      "address": "192.168.1.85",
+      "interfaceName": "Wi-Fi",
+      "netmask": "255.255.255.0"
+    }
+  ],
+  "primaryIp": "192.168.1.85",
+  "reachableIps": [
+    "192.168.56.1",
+    "192.168.137.1",
+    "192.168.1.85"
+  ],
+  "firewallActive": false
+}

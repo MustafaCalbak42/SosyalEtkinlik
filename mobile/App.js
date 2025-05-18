@@ -1,10 +1,13 @@
 import React, { useEffect } from 'react';
-import { StatusBar, LogBox, DeviceEventEmitter } from 'react-native';
+import { StatusBar, LogBox, DeviceEventEmitter, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/contexts/AuthContext';
 import * as Linking from 'expo-linking';
+import NetworkUtils from './src/shared/utils/networkUtils';
+import api from './src/shared/api/apiClient';
+import NetworkMonitor from './src/components/NetworkMonitor';
 
 // Performans iyileştirmesi için ekran kurulumunu etkinleştir
 enableScreens();
@@ -17,6 +20,44 @@ LogBox.ignoreLogs([
 ]);
 
 const App = () => {
+  // Uygulama başlatıldığında network izlemeyi başlat
+  useEffect(() => {
+    const setupNetwork = async () => {
+      try {
+        // Ağ durumunu kontrol et
+        const networkState = await NetworkUtils.checkNetworkState();
+        
+        // IP adresini otomatik algıla
+        const ipAddress = await NetworkUtils.detectLocalIpAddress();
+        console.log('Algılanan IP adresi:', ipAddress);
+        
+        // API URL'i güncelle
+        await api.updateApiUrl();
+        
+        // Sunucu bağlantısını kontrol et
+        const isConnected = await api.checkApiStatus();
+        
+        if (!isConnected) {
+          console.log('Sunucu bağlantısı kurulamadı');
+          Alert.alert(
+            'Sunucu Bağlantısı',
+            'Backend sunucuya bağlantı kurulamadı. Lütfen aynı WiFi ağında olduğunuzu ve sunucunun çalıştığını kontrol edin.\n\nAyarlar ekranına giderek bağlantı durumunu kontrol edebilirsiniz.'
+          );
+        }
+      } catch (error) {
+        console.error('Network ayarlanırken hata:', error);
+      }
+    };
+    
+    // Network izlemeyi başlat
+    setupNetwork();
+    
+    return () => {
+      // Uygulama kapatıldığında izlemeyi durdur
+      NetworkUtils.stopNetworkMonitoring();
+    };
+  }, []);
+
   // Expo Go'da deep link uyumsuzluklarını gidermek için event listener ekle
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
@@ -48,6 +89,7 @@ const App = () => {
           screens: {
             Home: 'home',
             Profile: 'profile',
+            Settings: 'settings'
           }
         }
       }
