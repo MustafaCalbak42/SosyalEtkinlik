@@ -4,15 +4,21 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { TouchableOpacity } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import AuthContext from '../contexts/AuthContext';
+import { createStackNavigator } from '@react-navigation/stack';
 
 // Ekranlar
 import ProfileScreen from '../screens/ProfileScreen';
 import HomeScreen from '../screens/HomeScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import CreateEventScreen from '../screens/CreateEventScreen';
+import EventDetailScreen from '../screens/EventDetailScreen';
 
 // Tab Navigator oluştur
 const Tab = createBottomTabNavigator();
+const MainStack = createStackNavigator();
 
-const MainNavigator = ({ navigation }) => {
+// Ana Tab Navigator
+const MainTabNavigator = ({ navigation }) => {
   const { logout } = useContext(AuthContext);
   
   // Logout fonksiyonu
@@ -23,7 +29,13 @@ const MainNavigator = ({ navigation }) => {
       
       console.log('Logged out successfully');
       
-      // Stay on home screen, the UI will update since isLoggedIn state changed
+      // Auth ekranına yönlendir
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Auth',
+          params: {},
+        })
+      );
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -79,7 +91,40 @@ const MainNavigator = ({ navigation }) => {
           ),
         }}
       />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          title: 'Ayarlar',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="settings" color={color} size={size} />
+          ),
+        }}
+      />
     </Tab.Navigator>
+  );
+};
+
+// MainNavigator - Hem Tab hem de Stack ekranlarını içerir
+const MainNavigator = () => {
+  return (
+    <MainStack.Navigator screenOptions={{ headerShown: false }}>
+      <MainStack.Screen name="MainTabs" component={MainTabNavigator} />
+      <MainStack.Screen 
+        name="CreateEvent" 
+        component={CreateEventScreen}
+        options={{
+          headerShown: false,
+        }} 
+      />
+      <MainStack.Screen
+        name="EventDetail"
+        component={EventDetailScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+    </MainStack.Navigator>
   );
 };
 

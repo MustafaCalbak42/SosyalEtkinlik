@@ -5,45 +5,83 @@
 
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import NetworkUtils from '../utils/networkUtils';
+import { Alert } from 'react-native';
 
-// Ortama göre API URL ayarla
-const getApiBaseUrl = () => {
-  // Test ortamında çalışıyorsa backend'i doğrudan localhost adresinden kullan
-  if (__DEV__) {
-    const debugMode = true; // Hata ayıklama modunu etkinleştir
-    
-    // Tüm olası IP'leri dene
-    const ipAddresses = [
-      '10.196.204.140', // WiFi IP
-      '192.168.137.1',  // Ethernet IP
-      'localhost',      // Localhost
-      '127.0.0.1'       // Loopback
-    ];
-    
-    const BACKEND_PORT = '5000';
-    
-    // Debug modu aktifse tüm olası IP'leri konsola yazdır
-    if (debugMode) {
-      console.log("DEBUG: Olası API URL'leri:");
-      ipAddresses.forEach(ip => {
-        console.log(`DEBUG: http://${ip}:${BACKEND_PORT}/api`);
-      });
-    }
-    
-    // Ana IP adresi olarak WiFi IP'sini kullan
-    const mainUrl = `http://10.0.2.2:${BACKEND_PORT}/api`;
-    console.log("Bağlanılacak API URL:", mainUrl);
-    return mainUrl;
-  }
-  
-  // Prodüksiyonda HTTPS ile gerçek sunucu adresini kullan
-  return 'https://api.sosyaletkinlik.com/api';
+// ServerConfig'i kullanmaya çalış, yoksa oluştur
+let SERVER_CONFIG = {
+  PRIMARY_IP: '',
+  PORT: '5000',
+  API_URL: ''
 };
 
-// API temel URL'ini ayarla
-const BASE_URL = getApiBaseUrl();
+try {
+  // Otomatik oluşturulmuş yapılandırma dosyasını içe aktar
+  const serverConfig = require('../constants/ServerConfig').default;
+  if (serverConfig) {
+    SERVER_CONFIG = serverConfig;
+    console.log('Sunucu yapılandırması yüklendi:', SERVER_CONFIG);
+  }
+} catch (error) {
+  console.log('Sunucu yapılandırması bulunamadı, varsayılan değerler kullanılacak:', error.message);
+}
 
-console.log('API URL:', BASE_URL); // Debug için API URL'sini göster
+// API URL'i başlangıçta boş olarak ayarla, dinamik olarak doldurulacak
+let BASE_URL = '';
+
+// API URL'i dinamik olarak ayarla
+const initializeApiUrl = async () => {
+  try {
+    // Ortama göre API URL ayarla
+    if (__DEV__) {
+      const BACKEND_PORT = SERVER_CONFIG.PORT || '5000';
+      
+      // Önce yapılandırma dosyasından IP adresi kullan
+      if (SERVER_CONFIG.API_URL) {
+        BASE_URL = SERVER_CONFIG.API_URL;
+        console.log("Yapılandırma dosyasından API URL:", BASE_URL);
+      } 
+      // Yoksa IP adresini otomatik algıla (WiFi IP)
+      else {
+        BASE_URL = await NetworkUtils.getApiBaseUrl(BACKEND_PORT);
+        console.log("Otomatik algılanan API URL:", BASE_URL);
+      }
+    } else {
+      // Prodüksiyonda HTTPS ile gerçek sunucu adresini kullan
+      BASE_URL = 'https://api.sosyaletkinlik.com/api';
+    }
+    
+    console.log('API URL ayarlandı:', BASE_URL);
+    
+    // API URL'ini Axios instance'a uygula
+    apiClient.defaults.baseURL = BASE_URL;
+    
+    return BASE_URL;
+  } catch (error) {
+    console.error('API URL başlatılırken hata:', error);
+    // Hata durumunda varsayılan URL'i kullan
+    const fallbackUrl = 'http://localhost:5000/api';
+    apiClient.defaults.baseURL = fallbackUrl;
+    return fallbackUrl;
+  }
+};
+
+// Network durumunu dinlemeye başla
+const startNetworkMonitoring = () => {
+  // IP değişikliklerini izle ve API URL'i güncelle
+  NetworkUtils.startNetworkMonitoring(async (newIpAddress) => {
+    if (newIpAddress) {
+      console.log('IP değişikliği algılandı:', newIpAddress);
+      await initializeApiUrl();
+      // API durumunu kontrol et
+      await checkApiStatus();
+    }
+  });
+};
+
+console.log('API İstemcisi başlatılıyor...');
 
 // Token yönetimi için yardımcı fonksiyonlar
 let authToken = null;
@@ -65,28 +103,104 @@ const removeAuthToken = () => {
 
 // Axios instance oluştur
 const apiClient = axios.create({
-  baseURL: BASE_URL,
+  // baseURL başlangıçta boş, sonra dinamik olarak ayarlanacak
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  timeout: 10000, // 10 saniye (daha kısa timeout, daha hızlı hata tespiti)
+  timeout: 30000, // 30 saniye (daha uzun timeout, ağır yükteki cihazlar için)
   validateStatus: function (status) {
     return status >= 200 && status < 500;
   },
   // Proxy ayarlarını devre dışı bırak (bazı ağlarda sorun çıkarabilir)
-  proxy: false,
-  // Bağlantı sorunlarını tespit etmek için daha fazla bilgi
-  maxRedirects: 5,
-  // Yeniden deneme stratejisi
-  retry: 3,
-  retryDelay: 1000
+  proxy: false
 });
+
+// API başlatmasını çağır
+initializeApiUrl().then(() => {
+  console.log('API URL başarıyla ayarlandı:', BASE_URL);
+  startNetworkMonitoring();
+}).catch(error => {
+  console.error('API başlatma hatası:', error);
+});
+
+// Basit API durumu kontrolü
+const checkApiStatus = async () => {
+  if (!BASE_URL) {
+    await initializeApiUrl();
+  }
+  
+  // Sağlık kontrolü URL'ini oluştur
+  const healthCheckUrl = SERVER_CONFIG.HEALTH_CHECK_URL || 
+                        `${BASE_URL.replace('/api', '')}/api/health`;
+  
+  try {
+    console.log('API bağlantı kontrolü yapılıyor:', healthCheckUrl);
+    
+    const response = await fetch(healthCheckUrl, { 
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      timeout: 5000
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ API bağlantısı başarılı:', data.message);
+      console.log('📱 Cihaz IP:', data.clientIp);
+      console.log('🔄 Sunucu zamanı:', data.timestamp);
+      return true;
+    } else {
+      console.log('❌ API bağlantısı başarısız:', response.status);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ API bağlantı kontrolü hatası:', error.message);
+    
+    // Bağlantı hatası varsa kullanıcıya bildir
+    try {
+      Alert.alert(
+        'Sunucu Bağlantı Hatası',
+        `Backend sunucuya bağlanılamadı. Lütfen şunları kontrol edin:\n
+1. Backend sunucunun çalıştığından emin olun
+2. Mobil cihazınız ve bilgisayarınızın aynı WiFi ağında olduğunu doğrulayın
+3. Bilgisayarınızın güvenlik duvarı ayarlarını kontrol edin
+
+Bağlantı adresi: ${healthCheckUrl}`,
+        [
+          { text: 'Tamam', style: 'cancel' }
+        ]
+      );
+    } catch (alertError) {
+      // Alert gösterilirken hata oluştuysa sadece log'a yaz (muhtemelen test ortamındayız)
+      console.log('Bağlantı hatası uyarısı gösterilemedi:', alertError);
+    }
+    
+    // Hata mesajını analiz et ve daha açıklayıcı bilgiler sun
+    if (error.message.includes('Network request failed')) {
+      console.error('Ağ isteği başarısız. Telefon ve bilgisayarın aynı WiFi ağına bağlı olduğundan emin olun.');
+    } else if (error.message.includes('timeout')) {
+      console.error('Bağlantı zaman aşımına uğradı. Backend sunucusunun çalışır durumda olduğunu kontrol edin.');
+    } else if (error.message.includes('JSON')) {
+      console.error('Sunucu geçersiz yanıt döndürdü. Backend sunucusunun doğru çalıştığından emin olun.');
+    }
+    
+    return false;
+  }
+};
+
+// Uygulama başlatıldığında API bağlantısını kontrol et
+checkApiStatus();
 
 // İstek engelleme (interceptors)
 apiClient.interceptors.request.use(
   async (config) => {
     console.log('API İsteği:', config.url); // Debug için
+    
+    // API URL'i ayarlanmamışsa ayarla
+    if (!config.baseURL || config.baseURL === '') {
+      config.baseURL = await initializeApiUrl();
+    }
+    
     const token = await AsyncStorage.getItem('token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
@@ -125,11 +239,20 @@ apiClient.interceptors.response.use(
     // Ağ hatası
     if (error.message === 'Network Error') {
       console.log('NETWORK ERROR: Ağ bağlantısı kurulamadı');
-      throw new Error(`Ağ hatası. Lütfen: 
-        1) İnternet bağlantınızı kontrol edin
-        2) IP adresinin doğru olduğunu kontrol edin (${BASE_URL})
-        3) Backend sunucunun çalıştığından emin olun
-        4) Mobil cihaz ve backend sunucunun aynı ağda olduğunu doğrulayın`);
+      // IP bağlantı hatası için spesifik mesaj
+      if (BASE_URL.includes('192.168.137.1')) {
+        throw new Error(`192.168.137.1:5000 adresine bağlantı kurulamadı. Lütfen:
+          1) Backend sunucunun çalıştığından emin olun
+          2) Telefonunuz ve bilgisayarınızın aynı ağda olduğunu kontrol edin
+          3) Bilgisayarınızın güvenlik duvarı ayarlarını kontrol edin
+          4) Bilgisayarınızdaki Node.js sunucusunun dış bağlantılara açık olduğundan emin olun`);
+      } else {
+        throw new Error(`Ağ hatası. Lütfen: 
+          1) İnternet bağlantınızı kontrol edin
+          2) IP adresinin doğru olduğunu kontrol edin (${BASE_URL})
+          3) Backend sunucunun çalıştığından emin olun
+          4) Mobil cihaz ve backend sunucunun aynı ağda olduğunu doğrulayın`);
+      }
     }
     
     const originalRequest = error.config;
@@ -167,6 +290,8 @@ const api = {
   // Token yönetimi yardımcı fonksiyonları 
   setAuthToken,
   removeAuthToken,
+  checkApiStatus,
+  updateApiUrl: initializeApiUrl,
   
   // Kimlik doğrulama
   auth: {
@@ -177,6 +302,14 @@ const api = {
     resetPassword: (passwordData) => apiClient.post('/users/reset-password', passwordData),
     resendVerification: (emailData) => apiClient.post('/users/resend-verification', emailData),
     verifyEmail: (verificationData) => apiClient.post('/users/verify-email', verificationData),
+    getToken: async () => {
+      try {
+        return await AsyncStorage.getItem('token');
+      } catch (error) {
+        console.error('Token alınırken hata:', error);
+        return null;
+      }
+    },
     handleEmailVerified: async (verificationData) => {
       try {
         // Tokenleri saklama
@@ -222,6 +355,7 @@ const api = {
     leave: (id) => apiClient.post(`/events/${id}/leave`),
     getNearby: (lat, lng, radius) => 
       apiClient.get(`/events/nearby?lat=${lat}&lng=${lng}&radius=${radius}`),
+    getRecommended: (params) => apiClient.get('/events/recommended', { params }),
   },
   
   // Hobiler
@@ -236,7 +370,7 @@ const api = {
   user: {
     getProfile: () => apiClient.get('/users/profile'),
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
-    changePassword: (passwordData) => apiClient.post('/users/change-password', passwordData),
+    changePassword: (passwordData) => apiClient.put('/users/change-password', passwordData),
   },
   
   // Kullanıcılar (çoğul)

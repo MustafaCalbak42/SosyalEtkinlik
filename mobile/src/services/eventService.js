@@ -15,7 +15,10 @@ export const getAllEvents = async (page = 1, limit = 10, category = null) => {
     
     // Kategori filtresi ekle
     if (category && category !== 'Tümü') {
+      // Kategori adını doğrudan ekle, herhangi bir dönüşüm yapmadan
       params.category = category;
+      // Log kategori filtresini kontrol için
+      console.log(`[eventService] Kategori filtresi eklendi: ${category}`);
     }
     
     const response = await api.events.getAll(params);
@@ -26,6 +29,21 @@ export const getAllEvents = async (page = 1, limit = 10, category = null) => {
     
     if (response.status >= 400) {
       throw new Error(response.data?.message || 'Etkinlikler alınırken bir hata oluştu');
+    }
+    
+    // Yanıt başarılı olduğunda gelen verileri logla
+    if (response.data) {
+      console.log(`[eventService] API ${response.data.data?.length || 0} etkinlik döndürdü`);
+      
+      // İlk birkaç etkinliğin hobi ve kategori bilgilerini kontrol için logla
+      if (response.data.data && response.data.data.length > 0) {
+        console.log('[eventService] İlk etkinlik örneği:', {
+          id: response.data.data[0]._id,
+          title: response.data.data[0].title,
+          hobbyInfo: response.data.data[0].hobby,
+          category: response.data.data[0].category
+        });
+      }
     }
     
     // Farklı API yanıt formatlarını ele al
@@ -100,27 +118,68 @@ export const getEventById = async (eventId) => {
  * Kullanıcının hobilerine göre önerilen etkinlikleri getir
  * @param {number} page - Sayfa numarası
  * @param {number} limit - Sayfa başına etkinlik sayısı
+ * @param {string} city - Kullanıcının bulunduğu il/şehir (opsiyonel)
  * @returns {Promise} - API yanıtı
  */
-export const getRecommendedEvents = async (page = 1, limit = 4) => {
+export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => {
   try {
-    console.log(`[eventService] Önerilen etkinlikler getiriliyor - sayfa: ${page}, limit: ${limit}`);
+    console.log(`[eventService] Önerilen etkinlikler getiriliyor - sayfa: ${page}, limit: ${limit}, şehir: ${city || 'Belirtilmedi'}`);
     
-    const params = { page, limit, recommended: true };
-    const response = await api.events.getAll(params);
+    // Kimlik doğrulama kontrolü
+    const token = await api.auth.getToken();
+    if (!token) {
+      console.warn('[eventService] Oturum açılmamış, önerilen etkinlikler alınamıyor');
+      return {
+        success: false,
+        message: 'Kişiselleştirilmiş öneriler için lütfen giriş yapın'
+      };
+    }
+    
+    // API isteği için URL parametreleri
+    const params = { page, limit };
+    
+    // Şehir parametresi eklendi (belirlenmişse)
+    if (city) {
+      params.city = city;
+      console.log(`[eventService] Şehir filtresi eklendi: ${city}`);
+    }
+    
+    console.log('[eventService] Önerilen etkinlikler için parametreler:', params);
+    
+    // /api/events/recommended endpoint'ine istek at
+    const response = await api.events.getRecommended(params);
     
     if (!response) {
+      console.error('[eventService] Önerilen etkinlikler için API yanıtı alınamadı');
       throw new Error('API yanıtı alınamadı');
     }
     
     if (response.status >= 400) {
+      console.error('[eventService] Önerilen etkinlikler API hatası:', response.status, response.data?.message);
       throw new Error(response.data?.message || 'Önerilen etkinlikler alınırken bir hata oluştu');
     }
     
-    // Farklı API yanıt formatlarını ele al
+    // API yanıtını logla
+    console.log('[eventService] Önerilen etkinlikler API yanıtı:', {
+      status: response.status,
+      success: response.data?.success,
+      count: response.data?.data?.length || 0,
+      message: response.data?.message || 'Mesaj yok'
+    });
+    
+    // Yanıt formatını kontrol et
     if (response.data && response.data.success) {
+      console.log(`[eventService] Önerilen etkinlikler başarıyla alındı (${response.data.data?.length || 0} etkinlik)`);
+      
+      // İl bilgisine göre filtrelenmiş mi kontrol et
+      const message = response.data.message || '';
+      if (message.includes('ilinizdeki')) {
+        console.log('[eventService] Etkinlikler il bilgisine göre filtrelendi');
+      }
+      
       return response.data;
     } else if (response.data && Array.isArray(response.data)) {
+      console.log(`[eventService] Önerilen etkinlikler başarıyla alındı (eski format, ${response.data.length} etkinlik)`);
       return {
         success: true,
         data: response.data,
@@ -137,6 +196,7 @@ export const getRecommendedEvents = async (page = 1, limit = 4) => {
     }
   } catch (error) {
     console.error('[eventService] Önerilen etkinlikler getirilirken hata:', error);
+    console.error('[eventService] Hata detayları:', error.message);
     return {
       success: false,
       message: error.message || 'Önerilen etkinlikler yüklenirken bir hata oluştu'

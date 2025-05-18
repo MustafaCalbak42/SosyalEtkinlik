@@ -11,41 +11,21 @@ export const getAllHobbies = async () => {
     console.log('Hobiler API yanıtı:', response);
     
     if (!response) {
+      console.error('Sunucudan yanıt alınamadı');
       throw new Error('Sunucudan yanıt alınamadı');
     }
     
-    if (response.status === 404) {
-      throw new Error('Hobiler bulunamadı');
+    // Backend'in döndürdüğü yanıt formatını doğrudan döndür
+    if (response.data) {
+      console.log('API yanıtından data dönüyorum:', typeof response.data);
+      return response.data;
     }
     
-    if (response.status >= 400) {
-      throw new Error(response.data?.message || 'Hobiler alınırken bir hata oluştu');
-    }
-    
-    // Response formatı kontrol edilir
-    if (response.data && typeof response.data === 'object') {
-      // Backend'in döndürdüğü success/message/data formatı
-      if (response.data.success !== undefined && Array.isArray(response.data.data)) {
-        console.log('Standart API yanıt formatı (data dizisi)');
-        return response.data.data; // Sadece data dizisini dön
-      }
-      // Backend direk hobi dizisini döndürmüş
-      else if (Array.isArray(response.data)) {
-        console.log('Düz dizi yanıt formatı');
-        return response.data;
-      }
-      // Belirsiz veya başka bir formatta
-      else {
-        console.warn('Bilinmeyen yanıt formatı:', response.data);
-        return response.data.hobbies || response.data.data || [];
-      }
-    } else {
-      console.error('Geçersiz veri formatı:', response.data);
-      throw new Error('Hobiler beklenen formatta değil');
-    }
+    console.warn('Beklenmeyen API yanıt formatı:', response);
+    throw new Error('Hobiler beklenen formatta değil');
   } catch (error) {
     console.error('Hobiler alınırken hata:', error);
-    throw new Error(error.message || 'Hobiler alınırken bir hata oluştu');
+    throw error;
   }
 };
 

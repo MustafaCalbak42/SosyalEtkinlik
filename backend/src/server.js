@@ -48,6 +48,23 @@ app.get('/', (req, res) => {
   res.send('Sosyal Etkinlik API Sunucusu çalışıyor');
 });
 
+// Mobil bağlantı testi için özel endpoint
+app.get('/api/health', (req, res) => {
+  // IP adresi bilgisini ekle
+  const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  
+  // Detaylı durum bilgisini gönder
+  res.json({
+    status: 'success',
+    message: 'Sosyal Etkinlik API Sunucusu çalışıyor',
+    timestamp: new Date().toISOString(),
+    clientIp: clientIp,
+    dbStatus: global.dbStatus || { connected: false, message: 'Veritabanı durumu henüz bilinmiyor' },
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Portu sabit 5000 olarak ayarla ve tüm ortamlarda aynı değeri kullan
 const PORT = 5000;
 
@@ -120,7 +137,7 @@ const startServer = async () => {
       console.log('------------------------------------------------');
       console.log('🚀 SUNUCU BAŞLATILDI');
       console.log(`🔧 Ortam: ${process.env.NODE_ENV}`);
-      console.log(`🌐 Adres: http://192.168.137.1:${PORT}`);
+      console.log(`🌐 Adres: http://192.168.1.36:${PORT}`);
       console.log('📱 Web ve Mobil istemcilere hizmet veriyor');
       console.log(`💾 Veritabanı bağlantısı: ${dbConnected ? 'BAŞARILI ✅' : 'BAŞARISIZ ❌'}`);
       console.log('------------------------------------------------');
