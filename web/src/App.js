@@ -18,6 +18,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import ProfilePage from './pages/ProfilePage';
 import ProfileSettingsPage from './pages/ProfileSettingsPage';
 import HomePage from './pages/HomePage';
+import EventDetailsPage from './pages/EventDetailsPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -149,6 +150,9 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Event Details */}
+            <Route path="/events/:eventId" element={<EventDetailsPage />} />
             
             {/* 404 - Bulunamadı */}
             <Route path="*" element={<Navigate to="/login" />} />

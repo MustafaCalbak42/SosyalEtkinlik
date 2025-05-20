@@ -201,10 +201,27 @@ apiClient.interceptors.request.use(
       config.baseURL = await initializeApiUrl();
     }
     
-    const token = await AsyncStorage.getItem('token');
-    if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`;
+    try {
+      // Her istekte AsyncStorage'dan token al - global değişken yerine
+      const token = await AsyncStorage.getItem('token');
+      
+      if (token) {
+        // Clean the token (remove any whitespace)
+        const cleanToken = token.trim();
+        
+        // Token varsa, Authorization header'ını ayarla
+        const authHeader = `Bearer ${cleanToken}`;
+        config.headers['Authorization'] = authHeader;
+        
+        // Log only part of token for security
+        console.log(`[API Debug] Request to ${config.url} with token: ${authHeader.substring(0, 20)}...`);
+      } else {
+        console.warn(`[API Debug] Request to ${config.url} without token!`);
+      }
+    } catch (error) {
+      console.error('[API Debug] Error getting token from AsyncStorage:', error);
     }
+    
     return config;
   },
   (error) => {
@@ -260,24 +277,49 @@ apiClient.interceptors.response.use(
     // Token geçersiz olduğunda yenileme işlemi
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
+      console.log('[API Debug] Received 401 error, attempting token refresh');
       
       try {
         const refreshToken = await AsyncStorage.getItem('refreshToken');
-        const response = await axios.post(`${BASE_URL}/users/refresh-token`, { refreshToken });
+        
+        if (!refreshToken) {
+          console.warn('[API Debug] No refresh token available, cannot refresh authentication');
+          throw new Error('No refresh token available');
+        }
+        
+        console.log('[API Debug] Attempting to refresh token');
+        const response = await axios.post(`${BASE_URL}/users/refresh-token`, { 
+          refreshToken: refreshToken.trim() 
+        });
         
         if (response.data.success) {
           const { token } = response.data.data;
-          await AsyncStorage.setItem('token', token);
+          console.log('[API Debug] Token refresh successful, new token received');
+          
+          // Store clean token
+          await AsyncStorage.setItem('token', token.trim());
           
           // Yeni token ile isteği tekrar gönder
-          originalRequest.headers['Authorization'] = `Bearer ${token}`;
+          const cleanToken = token.trim();
+          originalRequest.headers['Authorization'] = `Bearer ${cleanToken}`;
           return apiClient(originalRequest);
+        } else {
+          console.error('[API Debug] Token refresh failed:', response.data.message);
+          throw new Error(response.data.message || 'Token refresh failed');
         }
       } catch (refreshError) {
         // Token yenileme başarısız, kullanıcı çıkışı yapılmalı
+        console.error('[API Debug] Token refresh error:', refreshError.message);
         await AsyncStorage.removeItem('token');
         await AsyncStorage.removeItem('refreshToken');
         await AsyncStorage.removeItem('user');
+        
+        // Log user out automatically 
+        return Promise.reject({
+          ...error,
+          message: 'Authentication expired, please log in again',
+          refreshFailed: true
+        });
       }
     }
     
@@ -292,6 +334,7 @@ const api = {
   removeAuthToken,
   checkApiStatus,
   updateApiUrl: initializeApiUrl,
+  getBaseUrl: () => BASE_URL,
   
   // Kimlik doğrulama
   auth: {
@@ -304,9 +347,21 @@ const api = {
     verifyEmail: (verificationData) => apiClient.post('/users/verify-email', verificationData),
     getToken: async () => {
       try {
-        return await AsyncStorage.getItem('token');
+        console.log('[API] Retrieving token from AsyncStorage');
+        const token = await AsyncStorage.getItem('token');
+        
+        if (token) {
+          // Clean the token before returning it
+          const cleanToken = token.trim();
+          console.log('[API] Token retrieved (sanitized):', 
+            cleanToken ? `${cleanToken.substring(0, 15)}...` : 'null');
+          return cleanToken;
+        }
+        
+        console.log('[API] No token found in AsyncStorage');
+        return null;
       } catch (error) {
-        console.error('Token alınırken hata:', error);
+        console.error('[API] Error retrieving token:', error);
         return null;
       }
     },

@@ -9,7 +9,8 @@ import {
   Avatar, 
   IconButton, 
   LinearProgress, 
-  Tooltip 
+  Tooltip,
+  CardActionArea
 } from '@mui/material';
 import { 
   LocationOn, 
@@ -20,6 +21,7 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
 
 const getCategoryColor = (category) => {
   const colors = {
@@ -39,7 +41,11 @@ const getCategoryColor = (category) => {
 };
 
 const EventCard = ({ event }) => {
+  const navigate = useNavigate();
+  
   const { 
+    _id,
+    id,
     title, 
     description, 
     image, 
@@ -50,10 +56,20 @@ const EventCard = ({ event }) => {
     category 
   } = event;
 
+  const eventId = _id || id; // Support both _id (MongoDB) and id formats
+  
   const eventDate = new Date(date);
   const formattedDate = format(eventDate, 'PPP', { locale: tr });
   const formattedTime = format(eventDate, 'HH:mm');
   const attendeePercentage = (attendees / maxAttendees) * 100;
+
+  const handleCardClick = () => {
+    if (eventId) {
+      navigate(`/events/${eventId}`);
+    } else {
+      console.error('Event ID is missing, cannot navigate to details page');
+    }
+  };
 
   return (
     <Card 
@@ -64,9 +80,11 @@ const EventCard = ({ event }) => {
         transition: 'transform 0.3s, box-shadow 0.3s',
         '&:hover': {
           transform: 'translateY(-4px)',
-          boxShadow: '0 12px 20px rgba(0,0,0,0.1)'
+          boxShadow: '0 12px 20px rgba(0,0,0,0.1)',
+          cursor: 'pointer'
         }
       }}
+      onClick={handleCardClick}
     >
       <Box sx={{ position: 'relative' }}>
         <CardMedia
@@ -97,6 +115,10 @@ const EventCard = ({ event }) => {
             '&:hover': {
               backgroundColor: 'rgba(0,0,0,0.5)',
             },
+          }}
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent card click event
+            // Bookmark functionality here
           }}
         >
           <BookmarkBorder />

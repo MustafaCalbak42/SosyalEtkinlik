@@ -1,4 +1,30 @@
 import api from '../shared/api/apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+
+// API base URL'i al - eğer değişirse apiClient'dan güncel değeri alırız
+const getBaseUrl = async () => {
+  try {
+    // Önce ApiClient'ın BASE_URL'ini kullanmayı dene
+    if (api.getBaseUrl) {
+      return api.getBaseUrl();
+    }
+
+    // Fallback: AsyncStorage'dan okumayı dene
+    const savedBaseUrl = await AsyncStorage.getItem('api_base_url');
+    if (savedBaseUrl) {
+      return savedBaseUrl;
+    }
+
+    // Varsayılan URL'i kullan
+    return __DEV__ ? 
+      'http://localhost:5000/api' : 
+      'https://api.sosyaletkinlik.com/api';
+  } catch (error) {
+    console.error('[eventService] Error getting base URL:', error);
+    return 'http://localhost:5000/api';
+  }
+};
 
 /**
  * Tüm etkinlikleri sayfalandırma ile getir
@@ -126,7 +152,22 @@ export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => 
     console.log(`[eventService] Önerilen etkinlikler getiriliyor - sayfa: ${page}, limit: ${limit}, şehir: ${city || 'Belirtilmedi'}`);
     
     // Kimlik doğrulama kontrolü
-    const token = await api.auth.getToken();
+    const token = await AsyncStorage.getItem('token');
+    
+    // Debug token
+    if (token) {
+      console.log('[eventService] Token retrieved (first 20 chars):', token.substring(0, 20));
+      // Log token to check for any unexpected characters or formatting issues
+      console.log('[eventService] Token format check:', {
+        length: token.length,
+        hasSpaces: token.includes(' '),
+        hasNewlines: token.includes('\n'),
+        hasCarriageReturns: token.includes('\r')
+      });
+    } else {
+      console.warn('[eventService] No token found in AsyncStorage');
+    }
+    
     if (!token) {
       console.warn('[eventService] Oturum açılmamış, önerilen etkinlikler alınamıyor');
       return {
@@ -146,8 +187,25 @@ export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => 
     
     console.log('[eventService] Önerilen etkinlikler için parametreler:', params);
     
-    // /api/events/recommended endpoint'ine istek at
-    const response = await api.events.getRecommended(params);
+    // Base URL'i al
+    const baseUrl = await getBaseUrl();
+    console.log('[eventService] Using API base URL:', baseUrl);
+    
+    // Ensure token is clean (no whitespace, etc)
+    const cleanToken = token.trim();
+    
+    // Manuel olarak token ekleyerek API çağrısı yap
+    const authHeader = `Bearer ${cleanToken}`;
+    console.log('[eventService] Authorization header:', authHeader.substring(0, 25) + '...');
+    
+    const response = await axios.get(`${baseUrl}/events/recommended`, {
+      params,
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
     
     if (!response) {
       console.error('[eventService] Önerilen etkinlikler için API yanıtı alınamadı');
