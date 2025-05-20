@@ -28,23 +28,50 @@ const EventDetailScreen = ({ route, navigation }) => {
     fetchEventDetails();
   }, [eventId]);
   
-  const fetchEventDetails = async () => {
+  const fetchEventDetails = async (retryCount = 0) => {
     setLoading(true);
     setError('');
     
     try {
+      console.log(`[EventDetail] Fetching event details for ID: ${eventId} (attempt: ${retryCount + 1})`);
+      
+      // Make sure we have a valid event ID
+      if (!eventId) {
+        setError('Etkinlik ID\'si geçersiz');
+        setLoading(false);
+        return;
+      }
+      
       const response = await api.events.getById(eventId);
+      console.log('[EventDetail] API response received');
       
       if (response.data && response.data.success) {
+        console.log('[EventDetail] Successfully loaded event data');
         setEvent(response.data.data);
+      } else if (response.data) {
+        console.log('[EventDetail] Direct data format received');
+        // Handle alternative API response format
+        setEvent(response.data);
       } else {
-        setError(response.data?.message || 'Etkinlik bilgileri alınamadı');
+        throw new Error(response.data?.message || 'Etkinlik bilgileri alınamadı');
       }
     } catch (err) {
-      console.error('Etkinlik detayları yüklenirken hata:', err);
-      setError('Etkinlik detayları yüklenirken bir hata oluştu');
+      console.error('[EventDetail] Error fetching event details:', err.message);
+      
+      // Implement retry logic - max 3 retries
+      if (retryCount < 2) {
+        console.log(`[EventDetail] Retrying... (${retryCount + 1}/3)`);
+        setTimeout(() => {
+          fetchEventDetails(retryCount + 1);
+        }, 1000); // Wait 1 second before retry
+        return;
+      }
+      
+      setError(err.message || 'Etkinlik detayları yüklenirken bir hata oluştu');
     } finally {
-      setLoading(false);
+      if (retryCount === 0 || retryCount >= 2) {
+        setLoading(false);
+      }
     }
   };
   
@@ -121,14 +148,19 @@ const EventDetailScreen = ({ route, navigation }) => {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     
-    const date = new Date(dateString);
-    return date.toLocaleDateString('tr-TR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('tr-TR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (err) {
+      console.error('Date formatting error:', err);
+      return '';
+    }
   };
   
   if (loading) {
@@ -192,6 +224,31 @@ const EventDetailScreen = ({ route, navigation }) => {
     return participants.length;
   };
   
+  // Etkinlik görseli için URL al
+  const getEventImage = () => {
+    // Doğrudan event.image kullanılabilirse
+    if (event.image) {
+      return event.image;
+    }
+    
+    // Etkinliğin kategorisine göre varsayılan görseller
+    const categoryImages = {
+      'müzik': 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'spor': 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'sanat': 'https://images.unsplash.com/photo-1536924940846-227afb31e2a5?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'dans': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'yemek': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'seyahat': 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'teknoloji': 'https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'doğa': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'eğitim': 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+      'diğer': 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
+    };
+    
+    const category = (event.hobby?.category || event.category || '').toLowerCase();
+    return categoryImages[category] || 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
+  };
+  
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView}>
@@ -211,9 +268,15 @@ const EventDetailScreen = ({ route, navigation }) => {
         
         {/* Etkinlik Banner (eğer resim varsa) */}
         <View style={styles.bannerContainer}>
+          <Image 
+            source={{ uri: getEventImage() }}
+            style={styles.bannerImage}
+            resizeMode="cover"
+            onError={() => console.log('Image loading error')}
+          />
           <View style={styles.banner}>
             <Text style={styles.eventCategory}>
-              {event.hobby?.category || event.category || 'Etkinlik'}
+              {(event.hobby?.category || event.category || 'Etkinlik')}
             </Text>
           </View>
         </View>
@@ -235,49 +298,51 @@ const EventDetailScreen = ({ route, navigation }) => {
             <View style={styles.infoItem}>
               <MaterialIcons name="event" size={20} color={colors.primary.main} />
               <Text style={styles.infoText}>
-                {formatDate(event.startDate)}
+                {formatDate(event.startDate || event.date) || 'Tarih belirtilmemiş'}
               </Text>
             </View>
             
             <View style={styles.infoItem}>
               <MaterialIcons name="location-on" size={20} color={colors.primary.main} />
               <Text style={styles.infoText}>
-                {event.address || event.location?.address || 'Konum belirtilmemiş'}
+                {typeof event.location === 'object' 
+                  ? (event.location?.address || 'Konum belirtilmemiş') 
+                  : (event.address || event.location || 'Konum belirtilmemiş')}
               </Text>
             </View>
             
             <View style={styles.infoItem}>
               <MaterialIcons name="group" size={20} color={colors.primary.main} />
               <Text style={styles.infoText}>
-                {getParticipantCount()} Katılımcı / {event.maxParticipants || '∞'} Kapasite
+                {getParticipantCount()} Katılımcı / {event.maxParticipants ? event.maxParticipants : '∞'} Kapasite
               </Text>
             </View>
             
-            {event.price && Number(event.price) > 0 && (
+            {event.price && Number(event.price) > 0 ? (
               <View style={styles.infoItem}>
                 <MaterialIcons name="attach-money" size={20} color={colors.primary.main} />
                 <Text style={styles.infoText}>
                   {event.price} TL
                 </Text>
               </View>
-            )}
+            ) : null}
           </View>
           
           {/* Etkinlik Açıklaması */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Etkinlik Açıklaması</Text>
             <Text style={styles.descriptionText}>
-              {event.description || 'Bu etkinlik için açıklama bulunmuyor.'}
+              {event.description ? event.description : 'Bu etkinlik için açıklama bulunmuyor.'}
             </Text>
           </View>
           
           {/* Etikeller */}
-          {event.tags && event.tags.length > 0 && (
+          {event.tags && Array.isArray(event.tags) && event.tags.length > 0 ? (
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Etiketler</Text>
               <View style={styles.tagsContainer}>
                 {event.tags.map((tag, index) => (
-                  <View key={index} style={styles.tag}>
+                  <View key={`tag-${index}`} style={styles.tag}>
                     <Text style={styles.tagText}>
                       {tag}
                     </Text>
@@ -285,20 +350,20 @@ const EventDetailScreen = ({ route, navigation }) => {
                 ))}
               </View>
             </View>
-          )}
+          ) : null}
           
           {/* Gereksinimler */}
-          {event.requirements && event.requirements.length > 0 && (
+          {event.requirements && Array.isArray(event.requirements) && event.requirements.length > 0 ? (
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Katılım Gereksinimleri</Text>
               {event.requirements.map((requirement, index) => (
-                <View key={index} style={styles.requirementItem}>
+                <View key={`req-${index}`} style={styles.requirementItem}>
                   <MaterialIcons name="check-circle" size={18} color={colors.primary.main} />
                   <Text style={styles.requirementText}>{requirement}</Text>
                 </View>
               ))}
             </View>
-          )}
+          ) : null}
           
           {/* Etkinliğe Katıl/Ayrıl Butonu */}
           <TouchableOpacity 
@@ -307,8 +372,9 @@ const EventDetailScreen = ({ route, navigation }) => {
               isUserJoined() ? styles.leaveButton : null,
               joining ? styles.disabledButton : null
             ]}
-            onPress={handleJoinOrLeave}
+            onPress={joining ? null : handleJoinOrLeave}
             disabled={joining}
+            activeOpacity={0.8}
           >
             {joining ? (
               <ActivityIndicator size="small" color="#fff" />
@@ -395,12 +461,23 @@ const styles = StyleSheet.create({
   },
   bannerContainer: {
     height: 200,
-    backgroundColor: colors.primary.main,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  bannerImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   banner: {
     flex: 1,
     justifyContent: 'flex-end',
     padding: 15,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   eventCategory: {
     color: '#fff',

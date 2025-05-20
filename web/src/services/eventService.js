@@ -102,18 +102,23 @@ export const getEventsByHobby = async (hobbyId) => {
   }
 };
 
-// Etkinliğe katıl
+/**
+ * Etkinliğe katılma
+ * @param {string} eventId - Etkinlik ID
+ * @returns {Promise} - API yanıtı
+ */
 export const joinEvent = async (eventId) => {
   try {
     console.log(`[eventService] Joining event with ID: ${eventId}`);
-    const response = await api.put(`/events/${eventId}/join`);
+    const response = await api.post(`/events/${eventId}/join`);
     
     if (response.data && response.data.success) {
       return response.data;
     } else if (response.data) {
       return {
         success: true,
-        message: response.data.message || 'Etkinliğe başarıyla katıldınız'
+        message: response.data.message || 'Etkinliğe başarıyla katıldınız',
+        data: response.data
       };
     } else {
       console.error('[eventService] Invalid response format:', response.data);
@@ -131,18 +136,23 @@ export const joinEvent = async (eventId) => {
   }
 };
 
-// Etkinliğe katılımdan çık
+/**
+ * Etkinlikten ayrılma
+ * @param {string} eventId - Etkinlik ID
+ * @returns {Promise} - API yanıtı
+ */
 export const leaveEvent = async (eventId) => {
   try {
     console.log(`[eventService] Leaving event with ID: ${eventId}`);
-    const response = await api.put(`/events/${eventId}/leave`);
+    const response = await api.post(`/events/${eventId}/leave`);
     
     if (response.data && response.data.success) {
       return response.data;
     } else if (response.data) {
       return {
         success: true,
-        message: response.data.message || 'Etkinlikten başarıyla ayrıldınız'
+        message: response.data.message || 'Etkinlikten başarıyla ayrıldınız',
+        data: response.data
       };
     } else {
       console.error('[eventService] Invalid response format:', response.data);
