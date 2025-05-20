@@ -12,6 +12,7 @@ import HomeScreen from '../screens/HomeScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CreateEventScreen from '../screens/CreateEventScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 
 // Tab Navigator oluştur
 const Tab = createBottomTabNavigator();
@@ -120,6 +121,13 @@ const MainNavigator = () => {
       <MainStack.Screen
         name="EventDetail"
         component={EventDetailScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <MainStack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
         options={{
           headerShown: false,
         }}

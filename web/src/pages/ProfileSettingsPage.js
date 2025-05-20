@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ChangePasswordForm from '../components/Profile/ChangePasswordForm';
 import ProfilePhotoUpload from '../components/Profile/ProfilePhotoUpload';
+import ParticipatedEvents from '../components/Profile/ParticipatedEvents';
 import { getUserProfile } from '../services/userService';
 
 // TabPanel bileşeni
@@ -124,6 +125,7 @@ const ProfileSettingsPage = () => {
                 <Tab label="Hesap Bilgileri" />
                 <Tab label="Profil Fotoğrafı" />
                 <Tab label="Şifre Değiştir" />
+                <Tab label="Katıldığım Etkinlikler" />
                 <Tab label="Hesap Yönetimi" />
               </Tabs>
             </CardContent>
@@ -199,6 +201,10 @@ const ProfileSettingsPage = () => {
           </TabPanel>
           
           <TabPanel value={tabValue} index={3}>
+            <ParticipatedEvents />
+          </TabPanel>
+          
+          <TabPanel value={tabValue} index={4}>
             <Card sx={{ borderRadius: 2, boxShadow: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>

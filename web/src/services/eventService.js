@@ -110,7 +110,7 @@ export const getEventsByHobby = async (hobbyId) => {
 export const joinEvent = async (eventId) => {
   try {
     console.log(`[eventService] Joining event with ID: ${eventId}`);
-    const response = await api.post(`/events/${eventId}/join`);
+    const response = await api.put(`/events/${eventId}/join`);
     
     if (response.data && response.data.success) {
       return response.data;
@@ -144,7 +144,7 @@ export const joinEvent = async (eventId) => {
 export const leaveEvent = async (eventId) => {
   try {
     console.log(`[eventService] Leaving event with ID: ${eventId}`);
-    const response = await api.post(`/events/${eventId}/leave`);
+    const response = await api.put(`/events/${eventId}/leave`);
     
     if (response.data && response.data.success) {
       return response.data;

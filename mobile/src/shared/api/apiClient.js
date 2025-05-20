@@ -406,11 +406,12 @@ const api = {
     create: (eventData) => apiClient.post('/events', eventData),
     update: (id, eventData) => apiClient.put(`/events/${id}`, eventData),
     delete: (id) => apiClient.delete(`/events/${id}`),
-    join: (id) => apiClient.post(`/events/${id}/join`),
-    leave: (id) => apiClient.post(`/events/${id}/leave`),
+    join: (id) => apiClient.put(`/events/${id}/join`),
+    leave: (id) => apiClient.put(`/events/${id}/leave`),
     getNearby: (lat, lng, radius) => 
       apiClient.get(`/events/nearby?lat=${lat}&lng=${lng}&radius=${radius}`),
     getRecommended: (params) => apiClient.get('/events/recommended', { params }),
+    getParticipatedEvents: () => apiClient.get('/users/participated-events'),
   },
   
   // Hobiler
@@ -426,6 +427,7 @@ const api = {
     getProfile: () => apiClient.get('/users/profile'),
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
     changePassword: (passwordData) => apiClient.put('/users/change-password', passwordData),
+    getUserById: (userId) => apiClient.get(`/users/${userId}`),
   },
   
   // Kullanıcılar (çoğul)

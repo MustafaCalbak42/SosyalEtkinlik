@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const User = require('../models/User');
 
 // Controller fonksiyonları
 const { 
@@ -22,7 +23,9 @@ const {
   uploadProfilePicture,
   getUserByUsername,
   verifyEmail,
-  resendVerificationEmail
+  resendVerificationEmail,
+  getUserParticipatedEvents,
+  getUserById
 } = require('../controllers/userController');
 
 // Middleware ve Validatörler
@@ -218,5 +221,51 @@ router.put('/follow/:userId', protect, followUser);
  * @access  Private
  */
 router.put('/unfollow/:userId', protect, unfollowUser);
+
+/**
+ * @route   GET /api/users/participated-events
+ * @desc    Kullanıcının katıldığı etkinlikleri getir
+ * @access  Private
+ */
+router.get('/participated-events', protect, getUserParticipatedEvents);
+
+/**
+ * @route   GET /api/users/:id
+ * @desc    Kullanıcı bilgilerini ID ile getir
+ * @access  Public
+ */
+router.get('/:id', async (req, res, next) => {
+  try {
+    console.log('[userRoutes] GET /:id route called with id:', req.params.id);
+    
+    // Check if it's a valid MongoDB ObjectId
+    const mongoose = require('mongoose');
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(req.params.id);
+    
+    // If not a valid ObjectId, first try to find by username
+    if (!isValidObjectId) {
+      console.log('[userRoutes] Not a valid ObjectId, trying username');
+      const user = await User.findOne({ username: req.params.id })
+        .select('-password')
+        .populate('hobbies', 'name category description');
+      
+      if (user) {
+        console.log('[userRoutes] User found by username');
+        return res.json({
+          success: true,
+          data: user
+        });
+      }
+      
+      console.log('[userRoutes] User not found by username, continuing to getUserById');
+    }
+    
+    // Continue to the controller handler
+    return getUserById(req, res, next);
+  } catch (error) {
+    console.error('[userRoutes] Error in user lookup:', error);
+    next(error);
+  }
+});
 
 module.exports = router; 

@@ -29,11 +29,13 @@ const ProfileScreen = ({ navigation }) => {
   const [location, setLocation] = useState('');
   const [hobbies, setHobbies] = useState([]);
   const [userEvents, setUserEvents] = useState([]);
+  const [participatedEvents, setParticipatedEvents] = useState([]);
   
   const [loading, setLoading] = useState(true);
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingParticipatedEvents, setLoadingParticipatedEvents] = useState(false);
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -50,6 +52,7 @@ const ProfileScreen = ({ navigation }) => {
   useEffect(() => {
     fetchUserProfile();
     fetchUserEvents();
+    fetchParticipatedEvents();
   }, []);
   
   // AuthContext'ten gelen profil verisini kullan
@@ -253,6 +256,36 @@ const ProfileScreen = ({ navigation }) => {
       console.error('Etkinlik yükleme hatası:', error);
     } finally {
       setLoadingEvents(false);
+    }
+  };
+
+  // Kullanıcının katıldığı etkinlikleri getir
+  const fetchParticipatedEvents = async () => {
+    setLoadingParticipatedEvents(true);
+    
+    try {
+      // Kullanıcının katıldığı etkinlikleri getir
+      const response = await api.events.getParticipatedEvents();
+      console.log('Participated events response:', response);
+      
+      // Check for different response formats
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        // Standard API format with success and data properties
+        setParticipatedEvents(response.data.data);
+        console.log(`Found ${response.data.data.length} participated events`);
+      } else if (response.data && Array.isArray(response.data)) {
+        // Direct array format
+        setParticipatedEvents(response.data);
+        console.log(`Found ${response.data.length} participated events`);
+      } else {
+        console.error('Unexpected response format:', response.data);
+        setParticipatedEvents([]);
+      }
+    } catch (error) {
+      console.error('Katılınan etkinlikleri yükleme hatası:', error);
+      setParticipatedEvents([]);
+    } finally {
+      setLoadingParticipatedEvents(false);
     }
   };
 
@@ -637,6 +670,44 @@ const ProfileScreen = ({ navigation }) => {
             </View>
           ) : (
             <Text style={styles.emptyText}>Henüz etkinliğiniz bulunmuyor</Text>
+          )}
+        </View>
+        
+        {/* Kullanıcının Katıldığı Etkinlikler */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Katıldığım Etkinlikler</Text>
+          
+          {loadingParticipatedEvents ? (
+            <ActivityIndicator size="small" color={colors.primary.main} />
+          ) : participatedEvents.length > 0 ? (
+            <View style={styles.eventsContainer}>
+              {participatedEvents.slice(0, 3).map((event, index) => (
+                <TouchableOpacity 
+                  key={index} 
+                  style={styles.eventItem}
+                  onPress={() => navigateToEventDetail(event._id)}
+                >
+                  <View style={styles.eventInfo}>
+                    <Text style={styles.eventTitle}>{event.title}</Text>
+                    <Text style={styles.eventDate}>
+                      {new Date(event.startDate).toLocaleString('tr-TR')}
+                    </Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={24} color="#777" />
+                </TouchableOpacity>
+              ))}
+              
+              {participatedEvents.length > 3 && (
+                <TouchableOpacity 
+                  style={styles.showMoreButton}
+                  onPress={() => navigation.navigate('ParticipatedEvents')}
+                >
+                  <Text style={styles.showMoreText}>Tüm Katıldığım Etkinlikler</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.emptyText}>Henüz katıldığınız etkinlik bulunmuyor</Text>
           )}
         </View>
         

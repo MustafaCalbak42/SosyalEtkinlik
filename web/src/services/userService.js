@@ -1,9 +1,32 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/users';
+// Create a dynamic API URL that works in both development and production
+const getApiUrl = () => {
+  // If we're in development, use localhost
+  if (process.env.NODE_ENV === 'development') {
+    return 'http://localhost:5000/api/users';
+  }
+  
+  // For production, get the hostname dynamically
+  const hostname = window.location.hostname;
+  
+  // If running on localhost but in production build
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api/users';
+  }
+  
+  // For actual production deployment
+  return `${window.location.protocol}//${hostname}/api/users`;
+};
+
+const API_URL = getApiUrl();
+console.log('API URL initialized as:', API_URL);
 
 // Axios instance
-const axiosInstance = axios.create();
+const axiosInstance = axios.create({
+  // Increase timeout for slow connections
+  timeout: 30000
+});
 
 // Request interceptor
 axiosInstance.interceptors.request.use(
@@ -420,6 +443,154 @@ export const verifyEmailCode = async (data) => {
     }
     
     throw handleError(error);
+  }
+};
+
+/**
+ * Kullanıcının katıldığı etkinlikleri getirir
+ * @returns {Promise<Object>}
+ */
+export const getUserParticipatedEvents = async () => {
+  try {
+    console.log('[userService] Fetching user participated events');
+    const response = await axiosInstance.get(`${API_URL}/participated-events`);
+    
+    if (response.data && response.data.success) {
+      return response.data;
+    } else {
+      console.error('[userService] Invalid response format:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[userService] Error fetching participated events:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Katılınan etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
+};
+
+/**
+ * Kullanıcı bilgilerini ID'ye göre getirir
+ * @param {string} userId - Kullanıcı ID'si
+ * @returns {Promise<Object>}
+ */
+export const getUserById = async (userId) => {
+  try {
+    console.log(`Attempting to fetch user with ID: ${userId}`);
+    
+    if (!userId) {
+      console.error('getUserById: Missing userId parameter');
+      return {
+        success: false,
+        message: 'Kullanıcı ID\'si eksik'
+      };
+    }
+    
+    // If userId is an object, extract the ID
+    let id = userId;
+    
+    // Handle object format
+    if (typeof userId === 'object') {
+      if (userId._id) {
+        id = userId._id;
+      } else if (userId.id) {
+        id = userId.id;
+      } else if (userId.user) {
+        // Handle cases where it's in participant format
+        id = typeof userId.user === 'object' ? userId.user._id : userId.user;
+      }
+    }
+    
+    // Convert to string if it's not already
+    if (id && typeof id !== 'string') {
+      id = id.toString();
+    }
+    
+    // Special handling for MongoDB ObjectId - make sure we're formatting correctly
+    if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
+      // Valid MongoDB ObjectId format
+      console.log(`ID appears to be a valid MongoDB ObjectId: ${id}`);
+    } else {
+      console.log(`ID doesn't match MongoDB ObjectId format: ${id}`);
+      
+      // If clearly not a valid ObjectId, return error early
+      if (id && id.length === 24 && !id.match(/^[0-9a-fA-F]{24}$/)) {
+        return {
+          success: false,
+          message: 'Geçersiz kullanıcı ID formatı'
+        };
+      }
+    }
+    
+    // Log the final ID being used
+    console.log(`Making request to ${API_URL}/${id}`);
+    
+    try {
+      const response = await axiosInstance.get(`${API_URL}/${id}`);
+      console.log('User data response:', response.data);
+      return response.data;
+    } catch (requestError) {
+      console.error('API request error:', requestError.response?.status, requestError.message);
+      
+      // Handle 404 specifically
+      if (requestError.response?.status === 404) {
+        console.log(`User with ID ${id} not found, trying as username`);
+        
+        // Try a different approach - this might be a username instead of an ID
+        try {
+          console.log(`Trying as username: ${id}`);
+          const profileResponse = await axiosInstance.get(`${API_URL}/profile/${id}`);
+          console.log('User profile response:', profileResponse.data);
+          return profileResponse.data;
+        } catch (profileError) {
+          console.error('Profile lookup failed too:', profileError.response?.status);
+          
+          // If we get a 404 from both endpoints, the user likely doesn't exist
+          if (profileError.response?.status === 404) {
+            return {
+              success: false,
+              message: 'Kullanıcı bulunamadı',
+              code: 'USER_NOT_FOUND'
+            };
+          }
+          
+          return {
+            success: false,
+            message: 'Kullanıcı bilgisi alınamadı. Lütfen daha sonra tekrar deneyin.',
+            code: 'API_ERROR'
+          };
+        }
+      }
+      
+      // Handle other status codes
+      const statusCode = requestError.response?.status;
+      let errorMessage = 'Sunucu hatası';
+      
+      if (statusCode === 401) {
+        errorMessage = 'Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yapın.';
+      } else if (statusCode === 403) {
+        errorMessage = 'Bu kullanıcının profilini görüntüleme izniniz yok.';
+      } else if (statusCode === 500) {
+        errorMessage = 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.';
+      }
+      
+      return {
+        success: false,
+        message: requestError.response?.data?.message || errorMessage,
+        code: `HTTP_${statusCode || 'UNKNOWN'}`
+      };
+    }
+  } catch (error) {
+    console.error('Kullanıcı bilgileri getirme hatası:', error);
+    return {
+      success: false,
+      message: 'Kullanıcı bilgileri işlenirken beklenmedik bir hata oluştu',
+      code: 'UNEXPECTED_ERROR'
+    };
   }
 };
 

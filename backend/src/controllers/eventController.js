@@ -251,24 +251,58 @@ const getEvents = async (req, res) => {
 // @access  Public
 const getEventById = async (req, res) => {
   try {
+    console.log(`[eventController] Etkinlik detayları getiriliyor, ID: ${req.params.id}`);
+    
     const event = await Event.findById(req.params.id)
       .populate('organizer', 'username fullName profilePicture bio')
       .populate('hobby', 'name description category')
       .populate('participants.user', 'username fullName profilePicture');
     
     if (!event) {
-      return res.status(404).json({ message: 'Etkinlik bulunamadı' });
+      console.log(`[eventController] Etkinlik bulunamadı: ${req.params.id}`);
+      return res.status(404).json({ 
+        success: false,
+        message: 'Etkinlik bulunamadı' 
+      });
     }
     
-    res.json(event);
+    // Sadece katılımcı bilgilerini düzenli bir şekilde sunmak için veri işleme
+    const formattedEvent = event.toObject();
+    
+    // Katılımcıları daha erişilebilir bir formatta sun
+    formattedEvent.formattedParticipants = event.participants.map(participant => {
+      if (participant.user) {
+        return {
+          _id: participant.user._id,
+          username: participant.user.username,
+          fullName: participant.user.fullName,
+          profilePicture: participant.user.profilePicture,
+          joinedAt: participant.joinedAt
+        };
+      }
+      return { _id: participant.user, joinedAt: participant.joinedAt };
+    });
+    
+    console.log(`[eventController] Etkinlik detayları başarıyla getirildi, ${formattedEvent.formattedParticipants.length} katılımcı var`);
+    
+    res.json({
+      success: true,
+      data: formattedEvent
+    });
   } catch (error) {
     console.error('Etkinlik detaylarını getirme hatası:', error);
     
     if (error.kind === 'ObjectId') {
-      return res.status(404).json({ message: 'Etkinlik bulunamadı' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Etkinlik bulunamadı' 
+      });
     }
     
-    res.status(500).json({ message: 'Sunucu hatası' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Sunucu hatası' 
+    });
   }
 };
 
@@ -710,7 +744,7 @@ const getRecommendedEvents = async (req, res) => {
     
     // Ana sorguyu oluştur: 
     // 1. İl filtresini öncelikli uygula
-    // 2. Hobi ID'si veya kategorilere göre filtrele
+    // 2. Hobi ID'si veya kategori eşleşmesi
     
     // İl bilgisi ve hobi bilgisi var ise ilk önce ildeki etkinlikleri getir
     if (userProvince) {
