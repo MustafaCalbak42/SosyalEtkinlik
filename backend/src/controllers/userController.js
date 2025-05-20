@@ -1137,6 +1137,134 @@ const resendVerificationEmail = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Kullanıcının katıldığı etkinlikleri getir
+ * @route   GET /api/users/participated-events
+ * @access  Private
+ */
+const getUserParticipatedEvents = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .populate({
+        path: 'participatedEvents',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Kullanıcı bulunamadı' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user.participatedEvents
+    });
+  } catch (error) {
+    console.error('Katılınan etkinlikleri getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+};
+
+/**
+ * @desc    Kullanıcı bilgilerini ID'ye göre getir
+ * @route   GET /api/users/:id
+ * @access  Public
+ */
+const getUserById = async (req, res) => {
+  try {
+    console.log(`[getUserById] Request received for user ID: ${req.params.id}`);
+    
+    if (!req.params.id) {
+      console.log('[getUserById] No ID parameter found in request');
+      return res.status(400).json({
+        success: false,
+        message: 'ID parametresi gereklidir'
+      });
+    }
+
+    // Check for valid ObjectId format
+    const mongoose = require('mongoose');
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(req.params.id);
+    console.log(`[getUserById] ID validation: ${isValidObjectId ? 'Valid' : 'Invalid'} ObjectId format`);
+
+    let user = null;
+    
+    // First try to find by ObjectId if it's a valid ObjectId
+    if (isValidObjectId) {
+      console.log(`[getUserById] Searching by ObjectId: ${req.params.id}`);
+      // Print all users in the database to check if this ID exists
+      const allUsers = await User.find({}, '_id username fullName').limit(5);
+      console.log('[getUserById] Sample users in database:', 
+        allUsers.map(u => ({ id: u._id.toString(), username: u.username, name: u.fullName }))
+      );
+      
+      user = await User.findById(req.params.id)
+        .select('-password')
+        .populate('hobbies', 'name category description');
+      
+      console.log(`[getUserById] FindById result: ${user ? 'Found' : 'Not found'}`);
+    }
+    
+    // If not found by ObjectId or invalid ObjectId format, try other methods
+    if (!user) {
+      console.log('[getUserById] Not found by ObjectId, trying username or custom ID');
+      
+      // Try finding by username
+      user = await User.findOne({ username: req.params.id })
+        .select('-password')
+        .populate('hobbies', 'name category description');
+      
+      console.log(`[getUserById] FindOne by username result: ${user ? 'Found' : 'Not found'}`);
+      
+      if (!user) {
+        // Try any custom ID field you might be using
+        user = await User.findOne({ customId: req.params.id })
+          .select('-password')
+          .populate('hobbies', 'name category description');
+        
+        console.log(`[getUserById] FindOne by customId result: ${user ? 'Found' : 'Not found'}`);
+      }
+    }
+
+    console.log(`[getUserById] User found: ${!!user}`);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('[getUserById] Error:', error);
+    
+    if (error.kind === 'ObjectId') {
+      return res.status(404).json({
+        success: false,
+        message: 'Geçersiz kullanıcı ID\'si'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1153,5 +1281,7 @@ module.exports = {
   uploadProfilePicture,
   getUserByUsername,
   verifyEmail,
-  resendVerificationEmail
+  resendVerificationEmail,
+  getUserParticipatedEvents,
+  getUserById
 }; 

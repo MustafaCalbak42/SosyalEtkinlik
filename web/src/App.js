@@ -19,6 +19,7 @@ import ProfilePage from './pages/ProfilePage';
 import ProfileSettingsPage from './pages/ProfileSettingsPage';
 import HomePage from './pages/HomePage';
 import EventDetailsPage from './pages/EventDetailsPage';
+import UserProfilePage from './pages/UserProfilePage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -150,6 +151,9 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* User Profile */}
+            <Route path="/users/:userId" element={<UserProfilePage />} />
             
             {/* Event Details */}
             <Route path="/events/:eventId" element={<EventDetailsPage />} />
