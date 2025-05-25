@@ -20,6 +20,7 @@ import ProfileSettingsPage from './pages/ProfileSettingsPage';
 import HomePage from './pages/HomePage';
 import EventDetailsPage from './pages/EventDetailsPage';
 import UserProfilePage from './pages/UserProfilePage';
+import MessagesPage from './pages/MessagesPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -122,6 +123,16 @@ function App() {
               element={
                 <ProtectedRoute>
                   <HomePage />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* Mesajlaşma */}
+            <Route 
+              path="/messages" 
+              element={
+                <ProtectedRoute>
+                  <MessagesPage />
                 </ProtectedRoute>
               } 
             />

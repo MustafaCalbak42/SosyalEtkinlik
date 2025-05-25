@@ -3,107 +3,181 @@
  * Web ve Mobil istemcilerden gelen socket bağlantılarını yönetir
  */
 
+const Message = require('../models/Message');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
 const socketManager = (io) => {
+  // Bağlı kullanıcıları izlemek için
+  const connectedUsers = new Map();
+  
+  // Kimlik doğrulama middleware'i
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      
+      if (!token) {
+        return next(new Error('Kimlik doğrulama gerekli'));
+      }
+      
+      // Token doğrulama
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      if (!decoded) {
+        return next(new Error('Geçersiz token'));
+      }
+      
+      // Kullanıcı bilgilerini ekle
+      socket.userId = decoded.id;
+      socket.username = decoded.username;
+      
+      next();
+    } catch (error) {
+      return next(new Error('Kimlik doğrulama hatası: ' + error.message));
+    }
+  });
+
   // Bağlantı olayını dinle
-  io.on('connection', (socket) => {
-    console.log(`Yeni socket bağlantısı: ${socket.id}`);
+  io.on('connection', async (socket) => {
+    console.log(`Yeni socket bağlantısı: ${socket.id} (${socket.username || 'Anonim'})`);
     
-    // Kullanıcı bilgilerini sakla
-    let currentUser = null;
-    
-    // Kullanıcı kimlik doğrulama
-    socket.on('authenticate', (userData) => {
-      // Gerçek uygulamada bu token doğrulaması ile yapılmalı
-      currentUser = {
-        userId: userData.userId,
-        username: userData.username,
-        socketId: socket.id
-      };
+    try {
+      // Kullanıcı bilgilerini al
+      const user = await User.findById(socket.userId);
       
-      console.log(`Kullanıcı kimliği doğrulandı: ${currentUser.username}`);
-      
-      // Kullanıcıya özel bir odaya katılma
-      socket.join(`user:${currentUser.userId}`);
-      
-      // Kullanıcıya başarılı kimlik doğrulama bildirimi
-      socket.emit('authenticated', { success: true });
-    });
-    
-    // Sohbet odasına katılma
-    socket.on('join_room', (roomId) => {
-      if (!currentUser) {
-        socket.emit('error', { message: 'Önce kimlik doğrulaması yapmalısınız' });
-        return;
+      if (user) {
+        // Kullanıcıyı bağlı kullanıcılar listesine ekle
+        connectedUsers.set(socket.userId, { socketId: socket.id, username: user.username });
+        
+        // Kullanıcıya özel bir odaya katılma
+        socket.join(`user:${socket.userId}`);
+        
+        // Kullanıcının aktif olduğunu belirt
+        io.emit('user_status', {
+          userId: socket.userId,
+          username: user.username,
+          status: 'online'
+        });
+        
+        console.log(`Kullanıcı bağlandı: ${user.username}`);
       }
-      
-      socket.join(roomId);
-      console.log(`Kullanıcı ${currentUser.username} odaya katıldı: ${roomId}`);
-      
-      // Odadaki diğer kullanıcılara bildirim
-      socket.to(roomId).emit('user_joined', {
-        userId: currentUser.userId,
-        username: currentUser.username
-      });
-    });
+    } catch (error) {
+      console.error('Kullanıcı bilgileri alınırken hata:', error);
+    }
     
-    // Mesaj gönderme
-    socket.on('send_message', (data) => {
-      if (!currentUser) {
-        socket.emit('error', { message: 'Önce kimlik doğrulaması yapmalısınız' });
-        return;
+    // Özel mesaj gönderme
+    socket.on('private_message', async (data) => {
+      try {
+        const { recipientId, content, attachments } = data;
+        
+        // Veritabanına mesajı kaydet
+        const message = await Message.create({
+          content,
+          messageType: 'private',
+          sender: socket.userId,
+          recipient: recipientId,
+          attachments: attachments || []
+        });
+        
+        // Mesaj detaylarını getir
+        const populatedMessage = await Message.findById(message._id)
+          .populate('sender', 'username fullName profilePicture')
+          .populate('recipient', 'username fullName profilePicture');
+        
+        // Gönderene mesajı ilet
+        socket.emit('private_message', populatedMessage);
+        
+        // Alıcı bağlı ise mesajı ilet
+        if (connectedUsers.has(recipientId)) {
+          io.to(`user:${recipientId}`).emit('private_message', populatedMessage);
+        }
+        
+        console.log(`Özel mesaj gönderildi: ${socket.username} -> Alıcı: ${recipientId}`);
+      } catch (error) {
+        console.error('Özel mesaj gönderme hatası:', error);
+        socket.emit('error', { message: 'Mesaj gönderilemedi: ' + error.message });
       }
-      
-      console.log(`Mesaj alındı [${data.roomId}]: ${data.message}`);
-      
-      // Gönderilen mesaj bilgilerini zenginleştirme
-      const messageData = {
-        ...data,
-        sender: {
-          userId: currentUser.userId,
-          username: currentUser.username
-        },
-        timestamp: new Date()
-      };
-      
-      // Odadaki tüm kullanıcılara mesajı gönder (gönderen dahil)
-      io.to(data.roomId).emit('receive_message', messageData);
     });
     
-    // Yazıyor bildirimi
-    socket.on('typing', (data) => {
-      if (!currentUser) return;
-      
-      // Odadaki diğer kullanıcılara yazıyor bildirimini gönder (gönderen hariç)
-      socket.to(data.roomId).emit('user_typing', {
-        userId: currentUser.userId,
-        username: currentUser.username,
-        isTyping: data.isTyping
-      });
+    // Etkinlik mesajı gönderme
+    socket.on('event_message', async (data) => {
+      try {
+        const { eventId, content, attachments } = data;
+        
+        // Veritabanına mesajı kaydet
+        const message = await Message.create({
+          content,
+          messageType: 'event',
+          sender: socket.userId,
+          event: eventId,
+          attachments: attachments || []
+        });
+        
+        // Mesaj detaylarını getir
+        const populatedMessage = await Message.findById(message._id)
+          .populate('sender', 'username fullName profilePicture')
+          .populate('event', 'title');
+        
+        // Etkinlik odasına mesajı ilet
+        io.to(`event:${eventId}`).emit('event_message', populatedMessage);
+        
+        console.log(`Etkinlik mesajı gönderildi: ${socket.username} -> Etkinlik: ${eventId}`);
+      } catch (error) {
+        console.error('Etkinlik mesajı gönderme hatası:', error);
+        socket.emit('error', { message: 'Mesaj gönderilemedi: ' + error.message });
+      }
     });
     
-    // Etkinlik bildirimlerini dinleme
-    socket.on('event_notification', (data) => {
-      if (!currentUser) return;
+    // Etkinlik odasına katılma
+    socket.on('join_event', (eventId) => {
+      socket.join(`event:${eventId}`);
+      console.log(`Kullanıcı ${socket.username} etkinlik odasına katıldı: ${eventId}`);
+    });
+    
+    // Etkinlik odasından ayrılma
+    socket.on('leave_event', (eventId) => {
+      socket.leave(`event:${eventId}`);
+      console.log(`Kullanıcı ${socket.username} etkinlik odasından ayrıldı: ${eventId}`);
+    });
+    
+    // Yazıyor bildirimi (özel mesaj)
+    socket.on('typing_private', (data) => {
+      const { recipientId, isTyping } = data;
       
-      // Etkinliğe katılan kullanıcılara bildirim gönder
-      if (data.participants && Array.isArray(data.participants)) {
-        data.participants.forEach(userId => {
-          io.to(`user:${userId}`).emit('notification', {
-            type: 'event',
-            title: data.title,
-            message: data.message,
-            eventId: data.eventId,
-            timestamp: new Date()
-          });
+      if (connectedUsers.has(recipientId)) {
+        io.to(`user:${recipientId}`).emit('typing_private', {
+          senderId: socket.userId,
+          username: socket.username,
+          isTyping
         });
       }
     });
     
+    // Yazıyor bildirimi (etkinlik)
+    socket.on('typing_event', (data) => {
+      const { eventId, isTyping } = data;
+      
+      socket.to(`event:${eventId}`).emit('typing_event', {
+        senderId: socket.userId,
+        username: socket.username,
+        isTyping
+      });
+    });
+    
     // Bağlantı koptuğunda
     socket.on('disconnect', () => {
-      if (currentUser) {
-        console.log(`Kullanıcı bağlantısı koptu: ${currentUser.username}`);
-        // Gerekli temizlik işlemleri...
+      // Kullanıcıyı bağlı kullanıcılar listesinden çıkar
+      if (socket.userId) {
+        connectedUsers.delete(socket.userId);
+        
+        // Kullanıcının çevrimdışı olduğunu bildir
+        io.emit('user_status', {
+          userId: socket.userId,
+          username: socket.username,
+          status: 'offline'
+        });
+        
+        console.log(`Kullanıcı bağlantısı koptu: ${socket.username}`);
       } else {
         console.log(`Anonim bağlantı koptu: ${socket.id}`);
       }

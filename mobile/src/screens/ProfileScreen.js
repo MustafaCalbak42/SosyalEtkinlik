@@ -50,17 +50,10 @@ const ProfileScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    fetchUserProfile();
-    fetchUserEvents();
-    fetchParticipatedEvents();
-  }, []);
-  
-  // AuthContext'ten gelen profil verisini kullan
-  useEffect(() => {
     if (userProfile) {
       console.log('Using profile from AuthContext:', userProfile);
       setUser(userProfile);
-      setName(userProfile.name || '');
+      setName(userProfile.fullName || '');
       setEmail(userProfile.email || '');
       setBio(userProfile.bio || '');
       
@@ -84,6 +77,31 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [userProfile]);
   
+  // Komponentin yüklenmesinde ve token değiştiğinde profili yeniden yükle
+  useEffect(() => {
+    const loadProfileData = async () => {
+      console.log('ProfileScreen mount - loading profile data');
+      
+      try {
+        const token = await AsyncStorage.getItem('token');
+        console.log('ProfileScreen - Token mevcut:', !!token);
+        
+        if (token) {
+          fetchUserProfile();
+          fetchUserEvents();
+          fetchParticipatedEvents();
+        } else {
+          console.warn('ProfileScreen - Token bulunamadı, profil yüklenemiyor');
+          setError('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+        }
+      } catch (error) {
+        console.error('ProfileScreen token check error:', error);
+      }
+    };
+    
+    loadProfileData();
+  }, []);
+  
   // Kullanıcı profil bilgilerini getir
   const fetchUserProfile = async () => {
     setLoading(true);
@@ -92,84 +110,52 @@ const ProfileScreen = ({ navigation }) => {
     try {
       console.log('Fetching user profile...');
       const response = await api.user.getProfile();
-      
-      // Debug için API yanıtını logla
       console.log('API Yanıtı:', JSON.stringify(response.data, null, 2));
       
-      if (response.data) {
-        // API yanıt yapısını kontrol et (response.data.user veya doğrudan response.data)
-        const userData = response.data.user || response.data.data || response.data;
+      // Backend yanıt yapısı doğrudan { success: true, data: user } şeklinde
+      if (response.data && response.data.success && response.data.data) {
+        // Backend API'nin döndürdüğü yapıyı doğru şekilde kullan
+        const userData = response.data.data;
         
-        console.log('Extracted user data:', JSON.stringify(userData, null, 2));
+        setUser(userData);
+        setName(userData.fullName || '');
+        setEmail(userData.email || '');
+        setBio(userData.bio || '');
         
-        if (userData && (userData.name || userData.email)) {
-          // Geçerli bir kullanıcı verisi var
-          setUser(userData);
-          setName(userData.name || '');
-          setEmail(userData.email || '');
-          setBio(userData.bio || '');
-          
-          // Konum bilgisini ayarla
-          if (userData.location) {
-            if (typeof userData.location === 'string') {
-              setLocation(userData.location);
-            } else if (userData.location.address) {
-              setLocation(userData.location.address);
-            } else if (userData.location.city) {
-              setLocation(userData.location.city);
-            }
-          }
-          
-          // Hobiler
-          if (userData.hobbies && Array.isArray(userData.hobbies)) {
-            setHobbies(userData.hobbies);
-          }
-          
-          // AuthContext'i güncelle
-          if (refreshUserProfile) {
-            console.log('Refreshing user profile in AuthContext...');
-            await refreshUserProfile();
-          }
-        } else {
-          console.error('User data not found in response:', response.data);
-          
-          // Eğer AuthContext'te userProfile varsa onu kullan
-          if (userProfile) {
-            console.log('Falling back to userProfile from AuthContext');
-            setUser(userProfile);
-            setName(userProfile.name || '');
-            setEmail(userProfile.email || '');
-            setBio(userProfile.bio || '');
-            
-            if (userProfile.location) {
-              if (typeof userProfile.location === 'string') {
-                setLocation(userProfile.location);
-              } else if (userProfile.location.address) {
-                setLocation(userProfile.location.address);
-              } else if (userProfile.location.city) {
-                setLocation(userProfile.location.city);
-              }
-            }
-            
-            if (userProfile.hobbies && Array.isArray(userProfile.hobbies)) {
-              setHobbies(userProfile.hobbies);
-            }
-          } else {
-            setError('Kullanıcı bilgileri alınamadı');
+        // Konum bilgisini ayarla
+        if (userData.location) {
+          if (typeof userData.location === 'string') {
+            setLocation(userData.location);
+          } else if (userData.location.address) {
+            setLocation(userData.location.address);
+          } else if (userData.location.city) {
+            setLocation(userData.location.city);
           }
         }
-      } else {
-        console.error('No data in response');
         
-        // AuthContext'ten profil verisi kullan
+        // Hobiler
+        if (userData.hobbies && Array.isArray(userData.hobbies)) {
+          setHobbies(userData.hobbies);
+        }
+        
+        // AuthContext'i güncelle
+        if (refreshUserProfile) {
+          await refreshUserProfile();
+        }
+        
+        setLoading(false);
+        return true;
+      } else {
+        console.error('User data not found in response:', response.data);
+        
+        // Eğer AuthContext'te userProfile varsa onu kullan
         if (userProfile) {
-          console.log('No API response data, using AuthContext userProfile');
+          console.log('Falling back to userProfile from AuthContext');
           setUser(userProfile);
-          setName(userProfile.name || '');
+          setName(userProfile.fullName || '');
           setEmail(userProfile.email || '');
           setBio(userProfile.bio || '');
           
-          // Konum ve hobiler için userProfile'dan veri al
           if (userProfile.location) {
             if (typeof userProfile.location === 'string') {
               setLocation(userProfile.location);
@@ -186,6 +172,9 @@ const ProfileScreen = ({ navigation }) => {
         } else {
           setError('Kullanıcı bilgileri alınamadı');
         }
+        
+        setLoading(false);
+        return false;
       }
     } catch (err) {
       console.error('Profil bilgisi alma hatası:', err);
@@ -198,46 +187,24 @@ const ProfileScreen = ({ navigation }) => {
           [
             {
               text: 'Tamam',
-              onPress: () => navigation.dispatch(
-                CommonActions.navigate({
-                  name: 'Auth',
-                  params: {},
-                })
-              )
-            }
+              onPress: () => {
+                logout();
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'Login' }],
+                  })
+                );
+              },
+            },
           ]
         );
       } else {
-        // Eğer API hatası verirse ancak userProfile mevcutsa, bu veriyi kullan
-        if (userProfile) {
-          console.log('API error but using AuthContext userProfile as fallback');
-          setUser(userProfile);
-          setName(userProfile.name || '');
-          setEmail(userProfile.email || '');
-          setBio(userProfile.bio || '');
-          
-          if (userProfile.location) {
-            if (typeof userProfile.location === 'string') {
-              setLocation(userProfile.location);
-            } else if (userProfile.location.address) {
-              setLocation(userProfile.location.address);
-            } else if (userProfile.location.city) {
-              setLocation(userProfile.location.city);
-            }
-          }
-          
-          if (userProfile.hobbies && Array.isArray(userProfile.hobbies)) {
-            setHobbies(userProfile.hobbies);
-          }
-        } else {
-          setError(
-            err.response?.data?.message || 
-            'Profil bilgileri alınırken bir hata oluştu'
-          );
-        }
+        setError('Profil bilgisi alınamadı: ' + err.message);
       }
-    } finally {
+      
       setLoading(false);
+      return false;
     }
   };
   

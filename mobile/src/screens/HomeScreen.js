@@ -20,6 +20,7 @@ import { useAuth } from '../contexts/AuthContext';
 import EventCard from '../components/EventCard';
 import colors from '../shared/theme/colors';
 import { getAllEvents, getRecommendedEvents } from '../services/eventService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -126,7 +127,25 @@ const HomeScreen = ({ navigation }) => {
     setRecommendedLoading(true);
     
     try {
-      console.log('[HomeScreen] Kullanıcı profili:', userProfile);
+      console.log('[HomeScreen] Kullanıcı profili:', userProfile ? 'mevcut' : 'yok');
+      console.log('[HomeScreen] isLoggedIn durumu:', isLoggedIn);
+      
+      // İlk olarak login durumunu kontrol et
+      if (!isLoggedIn) {
+        console.warn('[HomeScreen] Kullanıcı giriş yapmamış, önerilen etkinlikler yüklenemiyor');
+        setRecommendedLoading(false);
+        return;
+      }
+      
+      // Token kontrolü
+      const token = await AsyncStorage.getItem('token');
+      if (!token || token.trim().length === 0) {
+        console.warn('[HomeScreen] Token bulunamadı veya geçersiz, önerilen etkinlikler yüklenemiyor');
+        setRecommendedLoading(false);
+        return;
+      }
+      
+      console.log('[HomeScreen] Token mevcut, uzunluk:', token.trim().length);
       
       // Kullanıcının şehir/il bilgisini al
       let userCity = null;
@@ -152,24 +171,45 @@ const HomeScreen = ({ navigation }) => {
       
       console.log(`[HomeScreen] Kullanıcının ili: ${userCity || 'Bilinmiyor'}`);
       
-      // Şehir bilgisini getRecommendedEvents fonksiyonuna aktar
-      const response = await getRecommendedEvents(1, 4, userCity);
-      
-      if (response && response.success) {
-        // API'den gelen verileri doğrula
-        const validEvents = (response.data || []).filter(event => 
-          event && typeof event === 'object' && event._id
-        );
-        console.log(`[HomeScreen] ${validEvents.length} önerilen etkinlik yüklendi`);
+      try {
+        // Şehir bilgisini getRecommendedEvents fonksiyonuna aktar
+        const response = await getRecommendedEvents(1, 4, userCity);
         
-        // İl bazlı mı kontrol et
-        if (response.message && response.message.includes('ilinizdeki')) {
-          console.log('[HomeScreen] Etkinlikler il bazlı filtrelendi:', response.message);
+        if (response && response.success) {
+          // API'den gelen verileri doğrula
+          const validEvents = (response.data || []).filter(event => 
+            event && typeof event === 'object' && event._id
+          );
+          
+          console.log(`[HomeScreen] ${validEvents.length} önerilen etkinlik yüklendi`);
+          
+          // İl bazlı mı kontrol et
+          if (response.message && response.message.includes('ilinizdeki')) {
+            console.log('[HomeScreen] Etkinlikler il bazlı filtrelendi:', response.message);
+          }
+          
+          setRecommendedEvents(validEvents);
+        } else {
+          console.warn('Önerilen etkinlikler yüklenemedi:', response?.message);
+          // Alternatif olarak, tüm etkinlikleri kullan (en son eklenen 4 etkinlik)
+          if (events && events.length > 0) {
+            console.log('[HomeScreen] Alternatif olarak en son etkinlikler gösteriliyor');
+            const recentEvents = [...events].sort((a, b) => 
+              new Date(b.createdAt) - new Date(a.createdAt)
+            ).slice(0, 4);
+            setRecommendedEvents(recentEvents);
+          }
         }
-        
-        setRecommendedEvents(validEvents);
-      } else {
-        console.warn('Önerilen etkinlikler yüklenemedi:', response?.message);
+      } catch (apiError) {
+        console.error('[HomeScreen] API hatası:', apiError.message);
+        // Alternatif olarak, tüm etkinlikleri kullan (en son eklenen 4 etkinlik)
+        if (events && events.length > 0) {
+          console.log('[HomeScreen] API hatası sonrası alternatif olarak en son etkinlikler gösteriliyor');
+          const recentEvents = [...events].sort((a, b) => 
+            new Date(b.createdAt) - new Date(a.createdAt)
+          ).slice(0, 4);
+          setRecommendedEvents(recentEvents);
+        }
       }
     } catch (error) {
       console.error('Önerilen etkinlikler yüklenirken hata:', error);

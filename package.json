@@ -2,6 +2,7 @@
   "dependencies": {
     "axios": "^1.9.0",
     "expo-linear-gradient": "^14.1.4",
-    "react-native-linear-gradient": "^2.8.3"
+    "react-native-linear-gradient": "^2.8.3",
+    "react-native-pager-view": "6.1.2"
   }
 }
