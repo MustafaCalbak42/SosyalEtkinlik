@@ -13,6 +13,13 @@ const fs = require('fs');
 const emailService = require('./services/emailService');
 const cleanupService = require('./services/cleanupService');
 
+// Gemini API konfigürasyonu
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('⚠️ GEMINI_API_KEY çevre değişkeni tanımlanmamış! İçerik moderasyonu çalışmayacak.');
+} else {
+  console.log('✅ Gemini API anahtarı yapılandırıldı, içerik moderasyonu aktif.');
+}
+
 // Routes
 const userRoutes = require('./routes/userRoutes');
 const hobbyRoutes = require('./routes/hobbyRoutes');

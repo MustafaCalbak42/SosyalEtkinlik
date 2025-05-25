@@ -6,6 +6,7 @@ import { Send as SendIcon, ArrowBack as ArrowBackIcon, Group as GroupIcon, Event
 import io from 'socket.io-client';
 import axios from 'axios';
 import MainLayout from '../components/MainLayout';
+import moderationService from '../services/moderationService';
 
 // Site renk teması
 const THEME_COLORS = {
@@ -38,6 +39,7 @@ const MessagesPage = () => {
   const [socket, setSocket] = useState(null);
   const messagesEndRef = useRef(null);
   const [error, setError] = useState(''); // Hata mesajı state'i
+  const [showAlert, setShowAlert] = useState(false);
   
   // Socket.io bağlantısını kur
   useEffect(() => {
@@ -69,6 +71,44 @@ const MessagesPage = () => {
     
     newSocket.on('error', (error) => {
       console.error('Socket hatası:', error);
+      // Hata mesajını göster
+      if (error && error.message) {
+        setError(error.message);
+        
+        // Eğer bu bir moderasyon hatası ve tempId varsa, ilgili geçici mesajı kaldır
+        if (error.tempId) {
+          setMessages(prevMessages => 
+            prevMessages.filter(msg => msg._id !== error.tempId)
+          );
+        }
+        // Eğer tempId yoksa ve bu bir moderasyon hatası ise
+        else if (error.message.includes('uygunsuz') || error.message.includes('dikkat')) {
+          // Uyarı alert'i göster
+          setShowAlert(true);
+          
+          // Mesaj içeriğini temizle
+          setNewMessage('');
+          
+          // En son eklenen geçici mesajı kaldır (optimistik UI güncellemesini geri al)
+          setMessages(prevMessages => {
+            // En son mesaj "self" gönderen tarafından gönderilmişse kaldır
+            if (prevMessages.length > 0 && 
+                prevMessages[prevMessages.length - 1].sender?._id === 'self') {
+              return prevMessages.slice(0, -1);
+            }
+            return prevMessages;
+          });
+        }
+        
+        // Custom Alert gösterme fonksiyonu (varsa)
+        if (window.showCustomAlert) {
+          window.showCustomAlert({
+            severity: 'warning',
+            message: error.message,
+            duration: 5000
+          });
+        }
+      }
     });
     
     // Özel mesajları dinle
@@ -77,9 +117,22 @@ const MessagesPage = () => {
       
       // Eğer açık olan konuşmaya aitse, mesajı ekle
       if (selectedConversation && 
-          (message.sender._id === selectedConversation._id || 
-           message.recipient._id === selectedConversation._id)) {
-        setMessages(prevMessages => [...prevMessages, message]);
+          (message.sender._id === selectedConversation.userId || 
+           message.recipient?._id === selectedConversation.userId)) {
+        
+        // Geçici mesajı gerçek mesaj ile değiştir
+        setMessages(prevMessages => {
+          // Eğer bu mesajın geçici bir ID'si varsa, o geçici mesajı bul ve değiştir
+          if (message.tempId) {
+            return prevMessages.map(msg => 
+              (msg.isTempMessage && msg._id === message.tempId) ? message : msg
+            );
+          } 
+          // Yoksa normal ekle
+          else {
+            return [...prevMessages, message];
+          }
+        });
       }
       
       // Konuşma listesini güncelle
@@ -88,11 +141,25 @@ const MessagesPage = () => {
     
     // Etkinlik mesajlarını dinle
     newSocket.on('event_message', (message) => {
-      if (!message || !message.event) return;
+      if (!message || !message.sender) return;
       
       // Eğer açık olan etkinlik konuşmasına aitse, mesajı ekle
-      if (selectedEventConversation && message.event._id === selectedEventConversation.eventId) {
-        setMessages(prevMessages => [...prevMessages, message]);
+      if (selectedEventConversation && 
+          (message.event?._id === selectedEventConversation.eventId)) {
+        
+        // Geçici mesajı gerçek mesaj ile değiştir
+        setMessages(prevMessages => {
+          // Eğer bu mesajın geçici bir ID'si varsa, o geçici mesajı bul ve değiştir
+          if (message.tempId) {
+            return prevMessages.map(msg => 
+              (msg.isTempMessage && msg._id === message.tempId) ? message : msg
+            );
+          } 
+          // Yoksa normal ekle
+          else {
+            return [...prevMessages, message];
+          }
+        });
       }
       
       // Etkinlik konuşmalarını güncelle
@@ -350,6 +417,14 @@ const MessagesPage = () => {
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
     
+    // Moderasyon ön kontrolü
+    const contentCheck = moderationService.checkContentBeforeSend(newMessage);
+    if (!contentCheck.isValid) {
+      setError(contentCheck.message);
+      setNewMessage(''); // Yerel kontrolde bile uygunsuz içerik varsa mesajı temizle
+      return;
+    }
+    
     try {
       // Token kontrolü
       const currentToken = localStorage.getItem('token');
@@ -358,28 +433,39 @@ const MessagesPage = () => {
         return;
       }
       
+      // Mesaj metnini geçici olarak saklayın
+      const messageText = newMessage;
+      
+      // Gönderildikten sonra mesaj alanını temizle
+      setNewMessage('');
+      
       if (selectedConversation && selectedConversation.userId) {
         console.log('Özel mesaj gönderiliyor:', selectedConversation.userId);
         // Özel mesaj gönder
         if (socket) {
-          socket.emit('private_message', {
-            recipientId: selectedConversation.userId,
-            content: newMessage
-          });
+          // Benzersiz geçici ID oluştur
+          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           
           // Mesajı hemen görüntüle (optimistik UI güncelleme)
           const tempMessage = {
-            _id: Date.now().toString(),
+            _id: tempId,
             sender: { _id: 'self' }, // Giden mesajları tanımlamak için geçici ID
-            content: newMessage,
-            createdAt: new Date().toISOString()
+            content: messageText,
+            createdAt: new Date().toISOString(),
+            isTempMessage: true // Bu mesajın geçici olduğunu belirt
           };
           setMessages(prevMessages => [...prevMessages, tempMessage]);
+          
+          socket.emit('private_message', {
+            recipientId: selectedConversation.userId,
+            content: messageText,
+            tempId: tempId // Geçici ID'yi de gönder
+          });
         } else {
           // Socket bağlantısı yoksa HTTP API'yi kullan (yedek yöntem)
           const response = await axios.post(`${API_URL}/messages/private`, {
             recipientId: selectedConversation.userId,
-            content: newMessage
+            content: messageText
           }, {
             headers: { 
               Authorization: `Bearer ${currentToken}`,
@@ -396,24 +482,29 @@ const MessagesPage = () => {
         console.log('Etkinlik mesajı gönderiliyor:', selectedEventConversation.eventId);
         // Etkinlik mesajı gönder
         if (socket) {
-          socket.emit('event_message', {
-            eventId: selectedEventConversation.eventId,
-            content: newMessage
-          });
+          // Benzersiz geçici ID oluştur
+          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           
           // Mesajı hemen görüntüle (optimistik UI güncelleme)
           const tempMessage = {
-            _id: Date.now().toString(),
+            _id: tempId,
             sender: { _id: 'self' }, // Giden mesajları tanımlamak için geçici ID
-            content: newMessage,
-            createdAt: new Date().toISOString()
+            content: messageText,
+            createdAt: new Date().toISOString(),
+            isTempMessage: true // Bu mesajın geçici olduğunu belirt
           };
           setMessages(prevMessages => [...prevMessages, tempMessage]);
+          
+          socket.emit('event_message', {
+            eventId: selectedEventConversation.eventId,
+            content: messageText,
+            tempId: tempId // Geçici ID'yi de gönder
+          });
         } else {
           // Socket bağlantısı yoksa HTTP API'yi kullan (yedek yöntem)
           const response = await axios.post(`${API_URL}/messages/event`, {
             eventId: selectedEventConversation.eventId,
-            content: newMessage
+            content: messageText
           }, {
             headers: { 
               Authorization: `Bearer ${currentToken}`,
@@ -432,7 +523,6 @@ const MessagesPage = () => {
         return;
       }
       
-      setNewMessage('');
       setError(''); // Başarılı işlemde hata mesajını temizle
     } catch (error) {
       console.error('Mesaj gönderme hatası:', error);
@@ -441,8 +531,43 @@ const MessagesPage = () => {
         return; // 401 hatası zaten ele alındı
       }
       
+      // Moderasyon hatası kontrolü
+      if (error.response?.status === 400 && error.response?.data?.message) {
+        // Muhtemelen moderasyon hatası
+        const errorMessage = moderationService.formatModerationError(error);
+        setError(errorMessage);
+        
+        // Mesaj içeriğini temizle
+        setNewMessage('');
+        
+        // En son eklenen geçici mesajı kaldır (optimistik UI güncellemesini geri al)
+        setMessages(prevMessages => {
+          if (prevMessages.length > 0 && prevMessages[prevMessages.length - 1].isTempMessage) {
+            return prevMessages.slice(0, -1);
+          }
+          return prevMessages;
+        });
+        
+        // Kullanıcıya görsel uyarı göster
+        if (showAlert) {
+          moderationService.showModerationWarning({ 
+            showAlert, 
+            message: errorMessage 
+          });
+        }
+        return;
+      }
+      
       // Diğer hatalar için
       setError('Mesaj gönderilemedi. Lütfen tekrar deneyin.');
+      
+      // En son eklenen geçici mesajı kaldır (optimistik UI güncellemesini geri al)
+      setMessages(prevMessages => {
+        if (prevMessages.length > 0 && prevMessages[prevMessages.length - 1].isTempMessage) {
+          return prevMessages.slice(0, -1);
+        }
+        return prevMessages;
+      });
     }
   };
   
@@ -606,6 +731,37 @@ const MessagesPage = () => {
       } else {
         setError('Sunucuya bağlanırken bir sorun oluştu. Lütfen internet bağlantınızı kontrol edin.');
       }
+    }
+  };
+  
+  // Mesaj değişikliğini takip et ve anlık kontrol yap
+  const handleMessageChange = (e) => {
+    const inputText = e.target.value;
+    setNewMessage(inputText);
+    
+    // Anlık küfür kontrolü
+    if (inputText && inputText.trim() !== '') {
+      // Her 500ms'de bir kontrol et (çok sık kontrolü önlemek için)
+      clearTimeout(window.profanityCheckTimeout);
+      window.profanityCheckTimeout = setTimeout(() => {
+        const profanityCheck = moderationService.checkContentBeforeSend(inputText);
+        
+        if (!profanityCheck.isValid) {
+          // Küfür tespit edildi, mesajı temizle
+          setNewMessage('');
+          // Uyarı göster
+          setError(profanityCheck.message);
+          
+          // Sarsma animasyonu için input alanına sarsma sınıfı ekle
+          const inputElement = document.getElementById('message-input');
+          if (inputElement) {
+            inputElement.classList.add('shake-animation');
+            setTimeout(() => {
+              inputElement.classList.remove('shake-animation');
+            }, 500);
+          }
+        }
+      }, 300);
     }
   };
   
@@ -1225,12 +1381,13 @@ const MessagesPage = () => {
                 </Box>
                 
                 <TextField
+                  id="message-input"
                   fullWidth
                   variant="outlined"
                   placeholder={selectedEventConversation ? "Etkinlik grubuna mesaj yazın..." : "Mesajınızı yazın..."}
                   size="small"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={handleMessageChange}
                   onKeyPress={handleKeyPress}
                   multiline
                   maxRows={3}
@@ -1239,6 +1396,23 @@ const MessagesPage = () => {
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 3,
                       backgroundColor: 'white'
+                    },
+                    '&.shake-animation': {
+                      animation: 'shake 0.5s',
+                      animationIterationCount: 1
+                    },
+                    '@keyframes shake': {
+                      '0%': { transform: 'translateX(0)' },
+                      '10%': { transform: 'translateX(-5px)' },
+                      '20%': { transform: 'translateX(5px)' },
+                      '30%': { transform: 'translateX(-5px)' },
+                      '40%': { transform: 'translateX(5px)' },
+                      '50%': { transform: 'translateX(-5px)' },
+                      '60%': { transform: 'translateX(5px)' },
+                      '70%': { transform: 'translateX(-5px)' },
+                      '80%': { transform: 'translateX(5px)' },
+                      '90%': { transform: 'translateX(-5px)' },
+                      '100%': { transform: 'translateX(0)' }
                     }
                   }}
                 />
