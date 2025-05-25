@@ -13,6 +13,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CreateEventScreen from '../screens/CreateEventScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import MessagesScreen from '../screens/MessagesScreen';
 
 // Tab Navigator oluştur
 const Tab = createBottomTabNavigator();
@@ -71,6 +72,16 @@ const MainTabNavigator = ({ navigation }) => {
           title: 'Ana Sayfa',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="home" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Messages"
+        component={MessagesScreen}
+        options={{
+          title: 'Mesajlar',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="chat" color={color} size={size} />
           ),
         }}
       />

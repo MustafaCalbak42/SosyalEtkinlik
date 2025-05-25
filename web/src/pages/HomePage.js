@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, CircularProgress, Pagination, Divider, Alert } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { Search as SearchIcon, LocationOn, Event, People, Category, Whatshot } from '@mui/icons-material';
-import Navbar from '../components/Layout/Navbar';
+import MainLayout from '../components/MainLayout';
 import EventCard from '../components/Events/EventCard';
 import CategoryFilter from '../components/Events/CategoryFilter';
 import RecommendedUsers from '../components/Users/RecommendedUsers';
@@ -639,260 +639,264 @@ function HomePage() {
   };
 
   return (
-    <>
-      <Navbar />
-      <Container maxWidth="lg">
-        <HeroSection>
-          <Typography variant="h3" component="h1" gutterBottom fontWeight="bold">
-            Hobinize Uygun Etkinlikleri Keşfedin
-          </Typography>
-          <Typography variant="h6" component="p" sx={{ maxWidth: 700, mx: 'auto', mb: 4 }}>
-            İlgi alanlarınıza göre etkinlik bulun, yeni insanlarla tanışın, organizasyonlar oluşturun.
-          </Typography>
-          <Button 
-            variant="contained" 
-            color="secondary"
-            size="large"
-            onClick={handleCreateEventOpen}
-            sx={{ 
-              backgroundColor: 'white', 
-              color: '#1976d2', 
-              fontWeight: 'bold',
-              '&:hover': {
-                backgroundColor: 'rgba(255,255,255,0.9)',
-              }
-            }}
-          >
-            Etkinlik Oluştur
-          </Button>
-        </HeroSection>
+    <MainLayout>
+      <HeroSection>
+        <Typography variant="h3" gutterBottom fontWeight="bold">
+          Ortak İlgi Alanlarını Keşfet
+        </Typography>
+        <Typography variant="h5" paragraph>
+          Sosyal etkinlikler ile yeni arkadaşlar edin, hobilerini paylaş
+        </Typography>
+        <Button 
+          variant="contained" 
+          color="secondary" 
+          size="large"
+          onClick={handleCreateEventOpen}
+          sx={{ mt: 2, fontWeight: 'bold', py: 1.2, px: 4 }}
+        >
+          Etkinlik Oluştur
+        </Button>
+      </HeroSection>
 
-        <SearchBox>
-          <StyledInputBase
-            placeholder="Etkinlik ara veya ilgi alanı gir..."
-            inputProps={{ 'aria-label': 'search' }}
-            endAdornment={
-              <IconButton type="submit" aria-label="search">
-                <SearchIcon />
-              </IconButton>
-            }
-          />
-        </SearchBox>
+      {/* Arama Kutusu */}
+      <SearchBox>
+        <StyledInputBase
+          placeholder="Etkinlik ara..."
+          inputProps={{ 'aria-label': 'search' }}
+        />
+        <IconButton sx={{ p: 2, position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)' }}>
+          <SearchIcon />
+        </IconButton>
+      </SearchBox>
 
-        {/* Size Özel Etkinlikler Bölümü */}
-        <Box sx={{ mb: 5 }}>
-          <Paper sx={{ p: 3, borderRadius: 2, mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Whatshot sx={{ mr: 1, color: 'error.main' }} />
-              <Typography variant="h5" component="h2" fontWeight="bold">
-                Size Özel Etkinlikler
-              </Typography>
+      {/* Etkinlik Sekmeleri */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs 
+          value={tabValue} 
+          onChange={handleTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab icon={<Whatshot />} iconPosition="start" label="Tüm Etkinlikler" />
+          <Tab icon={<Event />} iconPosition="start" label="Size Özel" disabled={!isAuthenticated} />
+          <Tab icon={<LocationOn />} iconPosition="start" label="Yakınımdakiler" />
+          <Tab icon={<People />} iconPosition="start" label="Arkadaşlarımın Etkinlikleri" disabled={!isAuthenticated} />
+        </Tabs>
+      </Box>
+
+      {/* Size Özel Etkinlikler Bölümü */}
+      <Box sx={{ mb: 5 }}>
+        <Paper sx={{ p: 3, borderRadius: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Whatshot sx={{ mr: 1, color: 'error.main' }} />
+            <Typography variant="h5" component="h2" fontWeight="bold">
+              Size Özel Etkinlikler
+            </Typography>
+          </Box>
+          
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            {isAuthenticated 
+              ? 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
+              : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+          </Typography>
+          
+          <Divider sx={{ mb: 3 }} />
+          
+          {!isAuthenticated && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Hobilerinize uygun etkinlikleri görmek için <Button 
+                variant="outlined" 
+                size="small" 
+                color="primary"
+                sx={{ ml: 1 }}
+                onClick={() => navigate('/login')}
+              >
+                Giriş Yapın
+              </Button>
+            </Alert>
+          )}
+          
+          {isAuthenticated && renderRecommendedEvents()}
+          
+          {isAuthenticated && recommendedEvents.length > 0 && (
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Button 
+                variant="outlined" 
+                color="primary"
+                onClick={() => {
+                  setSelectedCategory('Tümü');
+                  setTabValue(0);
+                }}
+              >
+                Tüm Etkinlikleri Görüntüle
+              </Button>
             </Box>
+          )}
+        </Paper>
+      </Box>
+
+      <Grid container spacing={4}>
+        <Grid item xs={12} md={8}>
+          <Box sx={{ mb: 3 }}>
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <Tabs 
+                value={tabValue} 
+                onChange={handleTabChange}
+                variant="fullWidth"
+                textColor="primary"
+                indicatorColor="primary"
+              >
+                <Tab icon={<Event />} label="Etkinlikler" />
+                <Tab icon={<LocationOn />} label="Yakınımdaki" />
+                <Tab icon={<People />} label="Arkadaşlarım" />
+              </Tabs>
+            </Paper>
             
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              {isAuthenticated 
-                ? 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
-                : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+            <CategoryFilter 
+              selectedCategory={selectedCategory} 
+              onSelectCategory={(category) => {
+                setSelectedCategory(category);
+                setCurrentPage(1); // Kategori değiştiğinde ilk sayfaya dön
+              }} 
+            />
+            
+            <Typography variant="h5" component="h2" fontWeight="bold" sx={{ mt: 3, mb: 2 }}>
+              {selectedCategory === 'Tümü' ? 'Tüm  Etkinlikler' : `${selectedCategory} Etkinlikleri`}
             </Typography>
             
-            <Divider sx={{ mb: 3 }} />
-            
-            {!isAuthenticated && (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Hobilerinize uygun etkinlikleri görmek için <Button 
-                  variant="outlined" 
-                  size="small" 
-                  color="primary"
-                  sx={{ ml: 1 }}
-                  onClick={() => navigate('/login')}
-                >
-                  Giriş Yapın
-                </Button>
-              </Alert>
-            )}
-            
-            {isAuthenticated && renderRecommendedEvents()}
-            
-            {isAuthenticated && recommendedEvents.length > 0 && (
-              <Box sx={{ textAlign: 'center', mt: 2 }}>
-                <Button 
-                  variant="outlined" 
-                  color="primary"
-                  onClick={() => {
-                    setSelectedCategory('Tümü');
-                    setTabValue(0);
-                  }}
-                >
-                  Tüm Etkinlikleri Görüntüle
-                </Button>
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
               </Box>
-            )}
-          </Paper>
-        </Box>
-
-        <Grid container spacing={4}>
-          <Grid item xs={12} md={8}>
-            <Box sx={{ mb: 3 }}>
-              <Paper sx={{ p: 2, mb: 2 }}>
-                <Tabs 
-                  value={tabValue} 
-                  onChange={handleTabChange}
-                  variant="fullWidth"
-                  textColor="primary"
-                  indicatorColor="primary"
-                >
-                  <Tab icon={<Event />} label="Etkinlikler" />
-                  <Tab icon={<LocationOn />} label="Yakınımdaki" />
-                  <Tab icon={<People />} label="Arkadaşlarım" />
-                </Tabs>
+            ) : error ? (
+              <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
+                {error}
               </Paper>
-              
-              <CategoryFilter 
-                selectedCategory={selectedCategory} 
-                onSelectCategory={(category) => {
-                  setSelectedCategory(category);
-                  setCurrentPage(1); // Kategori değiştiğinde ilk sayfaya dön
-                }} 
-              />
-              
-              <Typography variant="h5" component="h2" fontWeight="bold" sx={{ mt: 3, mb: 2 }}>
-                {selectedCategory === 'Tümü' ? 'Tüm  Etkinlikler' : `${selectedCategory} Etkinlikleri`}
-              </Typography>
-              
-              {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                  <CircularProgress />
-                </Box>
-              ) : error ? (
-                <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
-                  {error}
-                </Paper>
-              ) : (
-                <>
-                  <Grid container spacing={3}>
-                    {filteredEvents.map(event => (
-                      <Grid item xs={12} sm={6} key={getEventKey(event)}>
-                        <EventCard 
-                          event={{
-                            ...event,
-                            title: event.title,
-                            description: event.description,
-                            image: getEventImage(event),
-                            date: event.startDate || event.date,
-                            location: formatEventLocation(event),
-                            ...getAttendeeInfo(event),
-                            category: getEventCategory(event)
-                          }} 
-                        />
-                      </Grid>
-                    ))}
-                  </Grid>
-                  
-                  {/* Sayfalandırma */}
-                  {pagination.pages > 1 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                      <Pagination 
-                        count={pagination.pages} 
-                        page={currentPage}
-                        onChange={handlePageChange}
-                        color="primary"
-                        size="large"
-                        showFirstButton
-                        showLastButton
+            ) : (
+              <>
+                <Grid container spacing={3}>
+                  {filteredEvents.map(event => (
+                    <Grid item xs={12} sm={6} key={getEventKey(event)}>
+                      <EventCard 
+                        event={{
+                          ...event,
+                          title: event.title,
+                          description: event.description,
+                          image: getEventImage(event),
+                          date: event.startDate || event.date,
+                          location: formatEventLocation(event),
+                          ...getAttendeeInfo(event),
+                          category: getEventCategory(event)
+                        }} 
                       />
-                    </Box>
-                  )}
-                </>
-              )}
-              
-              {!loading && !error && filteredEvents.length === 0 && (
-                <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
-                  <Typography>
-                    Bu kategoride şu anda etkinlik bulunmuyor.
-                  </Typography>
-                  <Button 
-                    variant="contained" 
-                    color="primary" 
-                    sx={{ mt: 2 }}
-                    onClick={handleCreateEventOpen}
-                  >
-                    Etkinlik Oluştur
-                  </Button>
-                </Paper>
-              )}
-            </Box>
-          </Grid>
-          
-          <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Category sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6" component="h3" fontWeight="bold">
-                  İlgi Alanlarınız
+                    </Grid>
+                  ))}
+                </Grid>
+                
+                {/* Sayfalandırma */}
+                {pagination.pages > 1 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                    <Pagination 
+                      count={pagination.pages} 
+                      page={currentPage}
+                      onChange={handlePageChange}
+                      color="primary"
+                      size="large"
+                      showFirstButton
+                      showLastButton
+                    />
+                  </Box>
+                )}
+              </>
+            )}
+            
+            {!loading && !error && filteredEvents.length === 0 && (
+              <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
+                <Typography>
+                  Bu kategoride şu anda etkinlik bulunmuyor.
                 </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                {['Müzik', 'Seyahat', 'Doğa', 'Spor', 'Yemek'].map(interest => (
-                  <Button
-                    key={interest}
-                    size="small"
-                    variant="outlined"
-                    sx={{ 
-                      borderRadius: 4,
-                      px: 1.5
-                    }}
-                  >
-                    {interest}
-                  </Button>
-                ))}
-                <Button
-                  size="small"
-                  variant="text"
-                  color="primary"
-                  sx={{ borderRadius: 4 }}
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  sx={{ mt: 2 }}
+                  onClick={handleCreateEventOpen}
                 >
-                  + Düzenle
+                  Etkinlik Oluştur
                 </Button>
-              </Box>
-            </Paper>
-            
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Event sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6" component="h3" fontWeight="bold">
-                  Yaklaşan Etkinlikleriniz
-                </Typography>
-              </Box>
-              <UpcomingEvents events={mockEvents.slice(0, 2)} />
-              <Button
-                variant="text"
-                color="primary"
-                fullWidth
-                sx={{ mt: 1 }}
-              >
-                Tümünü Görüntüle
-              </Button>
-            </Paper>
-            
-            <Paper sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <People sx={{ mr: 1 }} color="primary" />
-                <Typography variant="h6" component="h3" fontWeight="bold">
-                  Size Benzer Kişiler
-                </Typography>
-              </Box>
-              <RecommendedUsers />
-            </Paper>
-          </Grid>
+              </Paper>
+            )}
+          </Box>
         </Grid>
         
-        {/* Etkinlik oluşturma modalı */}
-        <CreateEventForm 
-          open={createEventOpen} 
-          onClose={handleCreateEventClose} 
-        />
-      </Container>
-    </>
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Category sx={{ mr: 1 }} color="primary" />
+              <Typography variant="h6" component="h3" fontWeight="bold">
+                İlgi Alanlarınız
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+              {['Müzik', 'Seyahat', 'Doğa', 'Spor', 'Yemek'].map(interest => (
+                <Button
+                  key={interest}
+                  size="small"
+                  variant="outlined"
+                  sx={{ 
+                    borderRadius: 4,
+                    px: 1.5
+                  }}
+                >
+                  {interest}
+                </Button>
+              ))}
+              <Button
+                size="small"
+                variant="text"
+                color="primary"
+                sx={{ borderRadius: 4 }}
+              >
+                + Düzenle
+              </Button>
+            </Box>
+          </Paper>
+          
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Event sx={{ mr: 1 }} color="primary" />
+              <Typography variant="h6" component="h3" fontWeight="bold">
+                Yaklaşan Etkinlikleriniz
+              </Typography>
+            </Box>
+            <UpcomingEvents events={mockEvents.slice(0, 2)} />
+            <Button
+              variant="text"
+              color="primary"
+              fullWidth
+              sx={{ mt: 1 }}
+            >
+              Tümünü Görüntüle
+            </Button>
+          </Paper>
+          
+          <Paper sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <People sx={{ mr: 1 }} color="primary" />
+              <Typography variant="h6" component="h3" fontWeight="bold">
+                Size Benzer Kişiler
+              </Typography>
+            </Box>
+            <RecommendedUsers />
+          </Paper>
+        </Grid>
+      </Grid>
+      
+      {/* Etkinlik oluşturma modalı */}
+      <CreateEventForm 
+        open={createEventOpen} 
+        onClose={handleCreateEventClose} 
+      />
+    </MainLayout>
   );
 }
 

@@ -17,6 +17,7 @@ const cleanupService = require('./services/cleanupService');
 const userRoutes = require('./routes/userRoutes');
 const hobbyRoutes = require('./routes/hobbyRoutes');
 const eventRoutes = require('./routes/eventRoutes');
+const messageRoutes = require('./routes/messageRoutes');
 
 const app = express();
 
@@ -131,6 +132,7 @@ const startServer = async () => {
     app.use('/api/users', userRoutes);
     app.use('/api/hobbies', hobbyRoutes);
     app.use('/api/events', eventRoutes);
+    app.use('/api/messages', messageRoutes);
     
     // Start server - Sunucuyu başlat
     server.listen(PORT, '0.0.0.0', () => {

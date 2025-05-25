@@ -93,6 +93,8 @@ const AuthConsumer = () => {
   const { isLoggedIn, loading } = useAuth();
   const Stack = createStackNavigator();
 
+  console.log('[AppNavigator] Auth durumu - isLoggedIn:', isLoggedIn, 'loading:', loading);
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
@@ -102,15 +104,30 @@ const AuthConsumer = () => {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Main" component={MainNavigator} />
-      <Stack.Screen 
-        name="Auth" 
-        component={AuthNavigator}
-        options={{
-          animationEnabled: true,
-        }}
-      />
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={isLoggedIn ? 'Main' : 'Auth'}>
+      {isLoggedIn ? (
+        <Stack.Screen name="Main" component={MainNavigator} />
+      ) : (
+        <Stack.Screen 
+          name="Auth" 
+          component={AuthNavigator}
+          options={{
+            animationEnabled: true,
+          }}
+        />
+      )}
+      {/* Alternatif ekranlar için */}
+      {isLoggedIn ? (
+        <Stack.Screen 
+          name="Auth" 
+          component={AuthNavigator}
+          options={{
+            animationEnabled: true,
+          }}
+        />
+      ) : (
+        <Stack.Screen name="Main" component={MainNavigator} />
+      )}
     </Stack.Navigator>
   );
 };

@@ -26,6 +26,7 @@ const LoginScreen = ({ navigation, route }) => {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
+  const [showResendVerification, setShowResendVerification] = useState(false);
 
   // Route parametresinden gelen mesajı kontrol et
   useEffect(() => {
@@ -55,68 +56,89 @@ const LoginScreen = ({ navigation, route }) => {
   };
 
   const handleLogin = async () => {
-    if (!validateInputs()) return;
-
+    // Temel validasyon
+    if (!email || !password) {
+      setError('Lütfen e-posta ve şifre giriniz');
+      return;
+    }
+    
     setLoading(true);
     setError('');
-    setNeedsVerification(false);
-
+    
     try {
-      console.log('Login attempt with:', { email });
+      console.log('Giriş yapılıyor...');
+      const response = await api.auth.login({ email, password });
+      console.log('Login API yanıtı:', JSON.stringify(response.data, null, 2));
       
-      // API üzerinden login işlemi yap
-      const response = await api.auth.login({
-        email,
-        password
-      });
-      
-      console.log('Login response:', response.data);
-      
-      // API yanıtını kontrol et
-      if (response.data && response.data.success) {
-        // API başarılı yanıt verdi
-        const { token, refreshToken } = response.data.data;
+      if (response.data.success) {
+        console.log('Giriş başarılı, token alındı.');
         
-        if (token) {
-          try {
-            // AuthContext login fonksiyonunu çağır
-            await login(token, refreshToken);
+        // Tokenleri doğru şekilde al
+        const token = response.data.data.token;
+        const refreshToken = response.data.data.refreshToken;
+        
+        if (!token) {
+          setError('Sunucudan token alınamadı');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Token alındı, uzunluk:', token.length);
+        
+        // Önce token'ı doğrudan AsyncStorage'a kaydet
+        try {
+          await AsyncStorage.setItem('token', token.toString().trim());
+          console.log('Token doğrudan AsyncStorage\'a kaydedildi');
+          
+          // API'ye token'ı ayarla
+          api.setAuthToken(token);
+          
+          // AuthContext'e token'ı gönder
+          const loginResult = await login(token, refreshToken);
+          
+          if (loginResult.success) {
+            console.log('AuthContext login başarılı, ana sayfaya yönlendiriliyor');
             
-            // Anasayfaya git (AppNavigator otomatik yönlendirecek)
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Main' }],
-            });
-          } catch (storageError) {
-            console.error('Token storage error:', storageError);
-            setError('Oturum bilgileri kaydedilirken bir hata oluştu');
+            // Token'ın kaydedildiğinden emin ol
+            const storedToken = await AsyncStorage.getItem('token');
+            console.log('AsyncStorage\'da token var mı:', !!storedToken);
+            
+            // Kısa bir bekleme süresi ekle (state update'lerinin tamamlanması için)
+            setTimeout(() => {
+              // Ana ekrana yönlendir
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Main' }]
+              });
+            }, 100);
+          } else {
+            console.error('AuthContext login hatası:', loginResult.message);
+            setError('Oturum açılamadı: ' + loginResult.message);
           }
-        } else {
-          setError('Sunucu geçerli bir token döndürmedi');
+        } catch (storageError) {
+          console.error('Token saklama hatası:', storageError);
+          setError('Token saklanırken hata: ' + storageError.message);
         }
       } else {
-        // API başarısız yanıt verdi
-        setError(response.data?.message || 'Giriş yapılamadı. Lütfen bilgilerinizi kontrol edin.');
+        // Handle different API response errors
+        const errorMessage = response.data.message || 'Giriş başarısız';
+        console.error('Login API hatası:', errorMessage);
         
-        // E-posta doğrulama mesajı varsa
-        if (response.data?.message && (response.data.message.includes('e-posta adresinizi doğrulayın') || 
-            response.data.message.includes('e-posta doğrulama'))) {
-          setNeedsVerification(true);
+        // E-posta doğrulama hatası için özel mesaj
+        if (errorMessage.includes('doğrulanmamış') || errorMessage.includes('verified')) {
+          setShowResendVerification(true);
           setVerificationEmail(email);
+          setError('E-posta adresiniz doğrulanmamış. Doğrulama e-postası gönderilmesi için aşağıdaki butona tıklayın.');
+        } else {
+          setError(errorMessage);
         }
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      
-      if (error.response?.status === 400) {
-        setError('E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol edin.');
-      } else if (error.response?.status === 403 && error.response?.data?.message?.includes('doğrula')) {
-        setError('Lütfen e-posta adresinizi doğrulayın.');
-        setNeedsVerification(true);
-        setVerificationEmail(email);
-      } else {
-        setError('Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.');
-      }
+    } catch (err) {
+      console.error('Login hatası:', err);
+      setError(
+        err.response?.data?.message || 
+        'Giriş yapılırken bir hata oluştu. Lütfen tekrar deneyin.'
+      );
     } finally {
       setLoading(false);
     }
@@ -178,7 +200,7 @@ const LoginScreen = ({ navigation, route }) => {
           {error ? (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>{error}</Text>
-              {needsVerification && (
+              {showResendVerification && (
                 <TouchableOpacity 
                   style={styles.resendButton} 
                   onPress={handleResendVerification}

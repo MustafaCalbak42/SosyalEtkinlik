@@ -88,16 +88,27 @@ let authToken = null;
 
 // Token ekle/kaldır fonksiyonları
 const setAuthToken = (token) => {
-  authToken = token;
+  // Ensure token is a string and clean it
   if (token) {
-    console.log('API token ayarlandı');
+    const cleanToken = token.toString().trim();
+    authToken = cleanToken;
+    
+    // API token ayarlandığını logla
+    console.log('API token ayarlandı, uzunluk:', cleanToken.length);
+    console.log('Token ilk 10 karakter:', cleanToken.substring(0, 10));
+    
+    // Global axios instance için default headers'a token'ı ekle
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${cleanToken}`;
   } else {
+    authToken = null;
+    delete apiClient.defaults.headers.common['Authorization'];
     console.log('API token kaldırıldı');
   }
 };
 
 const removeAuthToken = () => {
   authToken = null;
+  delete apiClient.defaults.headers.common['Authorization'];
   console.log('API token kaldırıldı');
 };
 
@@ -207,19 +218,31 @@ apiClient.interceptors.request.use(
       
       if (token) {
         // Clean the token (remove any whitespace)
-        const cleanToken = token.trim();
+        const cleanToken = token.toString().trim();
         
-        // Token varsa, Authorization header'ını ayarla
-        const authHeader = `Bearer ${cleanToken}`;
-        config.headers['Authorization'] = authHeader;
-        
-        // Log only part of token for security
-        console.log(`[API Debug] Request to ${config.url} with token: ${authHeader.substring(0, 20)}...`);
+        // Token boş değilse ve geçerli bir uzunluğa sahipse
+        if (cleanToken && cleanToken.length > 10) {
+          // Token varsa, Authorization header'ını ayarla
+          const authHeader = `Bearer ${cleanToken}`;
+          config.headers['Authorization'] = authHeader;
+          
+          // Log only part of token for security
+          console.log(`[API Debug] Request to ${config.url} with token: ${authHeader.substring(0, 20)}...`);
+        } else {
+          console.warn(`[API Debug] Invalid token for ${config.url}: token too short or empty (length: ${cleanToken ? cleanToken.length : 0})`);
+          
+          // Token geçersizse header'dan kaldır
+          delete config.headers['Authorization'];
+        }
       } else {
         console.warn(`[API Debug] Request to ${config.url} without token!`);
+        // Token yoksa header'dan kaldır
+        delete config.headers['Authorization'];
       }
     } catch (error) {
       console.error('[API Debug] Error getting token from AsyncStorage:', error);
+      // Hata durumunda header'dan kaldır
+      delete config.headers['Authorization'];
     }
     
     return config;
@@ -338,7 +361,25 @@ const api = {
   
   // Kimlik doğrulama
   auth: {
-    login: (credentials) => apiClient.post('/users/login', credentials),
+    login: (credentials) => {
+      console.log('Login isteği gönderiliyor:', credentials.email);
+      return apiClient.post('/users/login', credentials)
+        .then(response => {
+          console.log('Login yanıtı alındı, başarı:', response.data?.success);
+          // Token var mı kontrol et
+          if (response.data?.success && response.data?.data?.token) {
+            console.log('Login başarılı, token alındı (ilk 10 karakter):', 
+              response.data.data.token.substring(0, 10) + '...');
+          } else {
+            console.warn('Login yanıtında token yok veya hata var!');
+          }
+          return response;
+        })
+        .catch(error => {
+          console.error('Login hatası:', error.message);
+          throw error;
+        });
+    },
     register: (userData) => apiClient.post('/users/register', userData),
     forgotPassword: (emailData) => apiClient.post('/users/forgot-password', emailData),
     verifyResetCode: (verificationData) => apiClient.post('/users/verify-reset-code', verificationData),
@@ -410,7 +451,32 @@ const api = {
     leave: (id) => apiClient.put(`/events/${id}/leave`),
     getNearby: (lat, lng, radius) => 
       apiClient.get(`/events/nearby?lat=${lat}&lng=${lng}&radius=${radius}`),
-    getRecommended: (params) => apiClient.get('/events/recommended', { params }),
+    getRecommended: async (params) => {
+      try {
+        // Token'ı doğrudan al
+        const token = await AsyncStorage.getItem('token');
+        if (!token) {
+          throw new Error('Token bulunamadı');
+        }
+        
+        // Token'ı temizle
+        const cleanToken = token.toString().trim();
+        
+        // Manuel olarak doğru header ile çağrı yap
+        const response = await apiClient.get('/events/recommended', { 
+          params,
+          headers: {
+            'Authorization': `Bearer ${cleanToken}`
+          }
+        });
+        
+        console.log('Recommended events API response:', response.data?.success);
+        return response;
+      } catch (error) {
+        console.error('getRecommended error:', error.message);
+        throw error;
+      }
+    },
     getParticipatedEvents: () => apiClient.get('/users/participated-events'),
   },
   
@@ -424,10 +490,40 @@ const api = {
   
   // Kullanıcılar
   user: {
-    getProfile: () => apiClient.get('/users/profile'),
+    getProfile: () => {
+      // Token kontrolü yaparak API çağrısı yap
+      return new Promise(async (resolve, reject) => {
+        try {
+          // Token'ı kontrol et
+          const token = await AsyncStorage.getItem('token');
+          if (!token) {
+            console.error('[API] getProfile: Token bulunamadı');
+            reject(new Error('Token bulunamadı, erişim engellendi'));
+            return;
+          }
+          
+          console.log('[API] getProfile çağrısı yapılıyor, token mevcut:', !!token);
+          
+          // API çağrısını özel header ile yap
+          const cleanToken = token.toString().trim();
+          const response = await apiClient.get('/users/profile', {
+            headers: {
+              'Authorization': `Bearer ${cleanToken}`
+            }
+          });
+          
+          console.log('[API] getProfile yanıtı:', response.data?.success);
+          resolve(response);
+        } catch (error) {
+          console.error('[API] getProfile hatası:', error.message);
+          reject(error);
+        }
+      });
+    },
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
     changePassword: (passwordData) => apiClient.put('/users/change-password', passwordData),
     getUserById: (userId) => apiClient.get(`/users/${userId}`),
+    getCurrentUser: () => apiClient.get('/users/profile'),
   },
   
   // Kullanıcılar (çoğul)
@@ -437,6 +533,18 @@ const api = {
     unfollow: (userId) => apiClient.put(`/users/unfollow/${userId}`),
     getCurrentUser: () => apiClient.get('/users/profile'),
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
+  },
+  
+  // Mesajlaşma
+  messages: {
+    getConversations: () => apiClient.get('/messages/conversations'),
+    getEventConversations: () => apiClient.get('/messages/events'),
+    getPrivateMessages: (userId) => apiClient.get(`/messages/private/${userId}`),
+    getEventMessages: (eventId) => apiClient.get(`/messages/event/${eventId}`),
+    sendPrivateMessage: (recipientId, content) => 
+      apiClient.post('/messages/private', { recipientId, content }),
+    sendEventMessage: (eventId, content) => 
+      apiClient.post('/messages/event', { eventId, content }),
   }
 };
 
