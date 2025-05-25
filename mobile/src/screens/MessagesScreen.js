@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Image,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import { TabView, TabBar } from 'react-native-tab-view';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -22,6 +23,8 @@ import { API_URL, COLORS } from '../shared/constants';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import moderationService from '../services/moderationService';
+import ShakeAnimation from '../components/ShakeAnimation';
 
 // Socket.io için doğru URL'i oluştur (API_URL'den /api kısmını çıkar)
 const SOCKET_URL = API_URL.replace('/api', '');
@@ -65,8 +68,11 @@ const MessagesScreen = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
+  const [shakeAnimation, setShakeAnimation] = useState(false);
+  const [moderationError, setModerationError] = useState('');
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const inputRef = useRef(null);
   
   // Token'ı yükle
   useEffect(() => {
@@ -115,6 +121,37 @@ const MessagesScreen = () => {
     
     newSocket.on('error', (error) => {
       console.error('[MessagesScreen] Socket hatası:', error);
+      
+      // Moderasyon hatası kontrolü
+      if (error && (error.message?.includes('uygunsuz') || error.message?.includes('dikkat'))) {
+        // Uyarı mesajını göster
+        setModerationError(error.message);
+        moderationService.showModerationWarning({ message: error.message });
+        setShakeAnimation(true);
+        
+        // Input alanına odaklan
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+        }, 800); // Animasyon bittikten sonra
+        
+        // Eğer geçici ID varsa, ilgili geçici mesajı kaldır
+        if (error.tempId) {
+          setMessages(prevMessages => 
+            prevMessages.filter(msg => msg._id !== error.tempId)
+          );
+        } else {
+          // En son eklenen geçici mesajı kaldır
+          setMessages(prevMessages => {
+            if (prevMessages.length > 0 && 
+                prevMessages[prevMessages.length - 1].status === 'sending') {
+              return prevMessages.slice(0, -1);
+            }
+            return prevMessages;
+          });
+        }
+      }
     });
     
     newSocket.on('disconnect', (reason) => {
@@ -423,9 +460,22 @@ const MessagesScreen = () => {
       // Mesaj içeriği
       const content = newMessage.trim();
       
+      // Moderasyon ön kontrolü (yerel kontrol)
+      const contentCheck = moderationService.checkContentBeforeSend(content);
+      if (!contentCheck.isValid) {
+        console.log('[MessagesScreen] Local moderation check failed:', contentCheck.message);
+        setModerationError(contentCheck.message);
+        setShakeAnimation(true);
+        setNewMessage('');
+        return;
+      }
+      
+      // Benzersiz geçici ID oluştur
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      
       // Gönderilen mesajı önce UI'a ekle (optimistik güncelleme)
       const tempMessage = {
-        _id: `temp-${Date.now()}`,
+        _id: tempId,
         content,
         sender: {
           _id: userProfile?.id || 'self',
@@ -461,21 +511,40 @@ const MessagesScreen = () => {
         console.log('[MessagesScreen] Sending private message to:', activeConversation.id);
         socket.emit('private_message', {
           recipientId: activeConversation.id,
-          content
+          content,
+          tempId // Geçici ID'yi gönder
         });
       } else if (activeConversation.type === 'event') {
         // Etkinlik mesajı gönder
         console.log('[MessagesScreen] Sending event message to:', activeConversation.id);
         socket.emit('event_message', {
           eventId: activeConversation.id,
-          content
+          content,
+          tempId // Geçici ID'yi gönder
         });
       }
       
       // Input alanını temizle
       setNewMessage('');
+      
+      // Hata mesajını temizle
+      setModerationError('');
     } catch (error) {
       console.error('[MessagesScreen] Mesaj gönderme hatası:', error);
+      
+      // Moderasyon hatası kontrolü
+      if (error.message && (error.message.includes('uygunsuz') || error.message.includes('dikkat'))) {
+        setModerationError(error.message);
+        setShakeAnimation(true);
+        
+        // En son eklenen mesajı kaldır (optimistik UI güncellemesini geri al)
+        setMessages(prevMessages => {
+          if (prevMessages.length > 0) {
+            return prevMessages.slice(0, -1);
+          }
+          return prevMessages;
+        });
+      }
     }
   };
   
@@ -517,7 +586,7 @@ const MessagesScreen = () => {
     }
   };
   
-  // Input değiştiğinde yazıyor... bildirimi gönder
+  // Input değiştiğinde yazıyor... bildirimi gönder ve küfür kontrolü yap
   const handleInputChange = (text) => {
     setNewMessage(text);
     
@@ -539,6 +608,30 @@ const MessagesScreen = () => {
         sendTypingStatus(false);
       }
     }, 3000);
+    
+    // Anlık küfür kontrolü
+    if (text && text.trim() !== '') {
+      // Performans için az sıklıkta kontrol et (her tuş vuruşunda değil)
+      clearTimeout(window.profanityCheckTimeout);
+      window.profanityCheckTimeout = setTimeout(() => {
+        const profanityCheck = moderationService.checkContentBeforeSend(text);
+        
+        if (!profanityCheck.isValid) {
+          // Küfür tespit edildi, mesajı temizle
+          setNewMessage('');
+          // Kullanıcıya uyarı göster
+          moderationService.showModerationWarning({ 
+            message: profanityCheck.message 
+          });
+          
+          // Yazıyor bildirimini kapat
+          sendTypingStatus(false);
+          
+          // Input referansı için sarsma state'ini aktif et
+          setShakeAnimation(true);
+        }
+      }, 300);
+    }
   };
   
   // Zaman formatla
@@ -932,27 +1025,44 @@ const MessagesScreen = () => {
                 <MaterialIcons name="photo-camera" size={24} color={THEME.darkGray} />
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.input}
-              value={newMessage}
-              onChangeText={handleInputChange}
-              placeholder={
-                activeConversation.type === 'event'
-                  ? "Etkinlik grubuna mesaj yazın..."
-                  : "Mesajınızı yazın..."
-              }
-              multiline
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                !newMessage.trim() && styles.sendButtonDisabled
-              ]}
-              onPress={sendMessage}
-              disabled={!newMessage.trim()}
-            >
-              <Ionicons name="send" size={20} color="white" />
-            </TouchableOpacity>
+            
+            {/* Moderasyon hatası */}
+            {moderationError && (
+              <Text style={styles.errorText}>{moderationError}</Text>
+            )}
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {/* Sarsma animasyonu ile input */}
+              <ShakeAnimation 
+                shake={shakeAnimation}
+                onAnimationEnd={() => setShakeAnimation(false)}
+                style={{ flex: 1 }}
+              >
+                <TextInput
+                  ref={inputRef}
+                  style={styles.input}
+                  value={newMessage}
+                  onChangeText={handleInputChange}
+                  placeholder={
+                    activeConversation.type === 'event'
+                      ? "Etkinlik grubuna mesaj yazın..."
+                      : "Mesajınızı yazın..."
+                  }
+                  multiline
+                />
+              </ShakeAnimation>
+              
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  !newMessage.trim() && styles.sendButtonDisabled
+                ]}
+                onPress={sendMessage}
+                disabled={!newMessage.trim()}
+              >
+                <Ionicons name="send" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       ) : (
@@ -1255,16 +1365,23 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     backgroundColor: '#FFF',
     padding: 8,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
   },
+  errorText: {
+    color: 'red',
+    fontSize: 12,
+    marginVertical: 4,
+    marginHorizontal: 10,
+    fontWeight: 'bold',
+  },
   inputActionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 4,
   },
   inputActionButton: {
     padding: 6,

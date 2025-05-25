@@ -10,6 +10,7 @@
     "seed:hobbies": "node src/utils/seedHobbies.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
@@ -27,4 +28,4 @@
     "nodemon": "^2.0.22",
     "supertest": "^6.3.3"
   }
-} 
+}

@@ -6,6 +6,7 @@
 const Message = require('../models/Message');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const moderationService = require('../services/moderationService'); // Moderasyon servisi eklendi
 
 const socketManager = (io) => {
   // Bağlı kullanıcıları izlemek için
@@ -68,7 +69,21 @@ const socketManager = (io) => {
     // Özel mesaj gönderme
     socket.on('private_message', async (data) => {
       try {
-        const { recipientId, content, attachments } = data;
+        const { recipientId, content, attachments, tempId } = data;
+        
+        // Moderasyon kontrolü
+        console.log('Socket - Özel mesaj moderasyon kontrolü yapılıyor:', content);
+        const moderationResult = await moderationService.checkInappropriateContent(content);
+        
+        if (moderationResult.isInappropriate) {
+          console.log('Socket - Uygunsuz içerik tespit edildi, mesaj engellendi');
+          // Kullanıcıya hata mesajı gönder
+          socket.emit('error', { 
+            message: moderationResult.message || 'Bu içerik uygunsuz ifadeler içeriyor. Lütfen dilinize dikkat ediniz.',
+            tempId // Geçici ID'yi geri gönder, böylece istemci hangi mesajı kaldıracağını bilir
+          });
+          return; // İşlemi sonlandır
+        }
         
         // Veritabanına mesajı kaydet
         const message = await Message.create({
@@ -84,8 +99,14 @@ const socketManager = (io) => {
           .populate('sender', 'username fullName profilePicture')
           .populate('recipient', 'username fullName profilePicture');
         
+        // Geçici ID'yi ekle (istemcinin geçici mesajı güncelleyebilmesi için)
+        const messageWithTempId = {
+          ...populatedMessage.toObject(),
+          tempId: tempId
+        };
+        
         // Gönderene mesajı ilet
-        socket.emit('private_message', populatedMessage);
+        socket.emit('private_message', messageWithTempId);
         
         // Alıcı bağlı ise mesajı ilet
         if (connectedUsers.has(recipientId)) {
@@ -95,14 +116,31 @@ const socketManager = (io) => {
         console.log(`Özel mesaj gönderildi: ${socket.username} -> Alıcı: ${recipientId}`);
       } catch (error) {
         console.error('Özel mesaj gönderme hatası:', error);
-        socket.emit('error', { message: 'Mesaj gönderilemedi: ' + error.message });
+        socket.emit('error', { 
+          message: 'Mesaj gönderilemedi: ' + error.message,
+          tempId: data.tempId // Hata durumunda geçici ID'yi geri gönder
+        });
       }
     });
     
     // Etkinlik mesajı gönderme
     socket.on('event_message', async (data) => {
       try {
-        const { eventId, content, attachments } = data;
+        const { eventId, content, attachments, tempId } = data;
+        
+        // Moderasyon kontrolü
+        console.log('Socket - Etkinlik mesajı moderasyon kontrolü yapılıyor:', content);
+        const moderationResult = await moderationService.checkInappropriateContent(content);
+        
+        if (moderationResult.isInappropriate) {
+          console.log('Socket - Uygunsuz içerik tespit edildi, mesaj engellendi');
+          // Kullanıcıya hata mesajı gönder
+          socket.emit('error', { 
+            message: moderationResult.message || 'Bu içerik uygunsuz ifadeler içeriyor. Lütfen dilinize dikkat ediniz.',
+            tempId // Geçici ID'yi geri gönder
+          });
+          return; // İşlemi sonlandır
+        }
         
         // Veritabanına mesajı kaydet
         const message = await Message.create({
@@ -118,13 +156,25 @@ const socketManager = (io) => {
           .populate('sender', 'username fullName profilePicture')
           .populate('event', 'title');
         
-        // Etkinlik odasına mesajı ilet
-        io.to(`event:${eventId}`).emit('event_message', populatedMessage);
+        // Geçici ID'yi ekle (istemcinin geçici mesajı güncelleyebilmesi için)
+        const messageWithTempId = {
+          ...populatedMessage.toObject(),
+          tempId: tempId
+        };
+        
+        // Önce gönderene başarıyla kaydedildiğini bildir
+        socket.emit('event_message', messageWithTempId);
+        
+        // Sonra etkinlik odasına mesajı ilet (gönderen hariç)
+        socket.to(`event:${eventId}`).emit('event_message', populatedMessage);
         
         console.log(`Etkinlik mesajı gönderildi: ${socket.username} -> Etkinlik: ${eventId}`);
       } catch (error) {
         console.error('Etkinlik mesajı gönderme hatası:', error);
-        socket.emit('error', { message: 'Mesaj gönderilemedi: ' + error.message });
+        socket.emit('error', { 
+          message: 'Mesaj gönderilemedi: ' + error.message,
+          tempId: data.tempId // Hata durumunda geçici ID'yi geri gönder
+        });
       }
     });
     

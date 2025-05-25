@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { check } = require('express-validator');
+const { moderateContent } = require('../middleware/contentModerationMiddleware');
 
 // Controller fonksiyonları daha sonra oluşturulacak
 const {
@@ -20,6 +21,16 @@ const {
 
 const { protect } = require('../middleware/authMiddleware');
 
+// Etkinlik içeriği için özel moderation middleware
+const moderateEventContent = (req, res, next) => {
+  // Etkinlik açıklaması için moderation
+  const content = req.body.description;
+  if (content) {
+    req.body.content = content; // moderateContent middleware'i için
+  }
+  next();
+};
+
 // @route   POST /api/events
 // @desc    Yeni etkinlik oluştur
 // @access  Private
@@ -35,6 +46,8 @@ router.post(
     check('maxParticipants', 'Maksimum katılımcı sayısı zorunludur').isInt({ min: 1 })
   ],
   protect,
+  moderateEventContent,
+  moderateContent,
   createEvent
 );
 
@@ -71,7 +84,7 @@ router.get('/:id', getEventById);
 // @route   PUT /api/events/:id
 // @desc    Etkinlik güncelle
 // @access  Private
-router.put('/:id', protect, updateEvent);
+router.put('/:id', protect, moderateEventContent, moderateContent, updateEvent);
 
 // @route   DELETE /api/events/:id
 // @desc    Etkinlik sil
