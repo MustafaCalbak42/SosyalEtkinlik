@@ -25,6 +25,7 @@ const userRoutes = require('./routes/userRoutes');
 const hobbyRoutes = require('./routes/hobbyRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const messageRoutes = require('./routes/messageRoutes');
+const savedConversationRoutes = require('./routes/savedConversationRoutes');
 
 const app = express();
 
@@ -140,6 +141,7 @@ const startServer = async () => {
     app.use('/api/hobbies', hobbyRoutes);
     app.use('/api/events', eventRoutes);
     app.use('/api/messages', messageRoutes);
+    app.use('/api/saved-conversations', savedConversationRoutes);
     
     // Start server - Sunucuyu başlat
     server.listen(PORT, '0.0.0.0', () => {

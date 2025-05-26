@@ -166,16 +166,14 @@ function App() {
               path="/profile" 
               element={
                 <ProtectedRoute>
-                  <ProfilePage />
+                  <ProfileSettingsPage />
                 </ProtectedRoute>
               } 
             />
             <Route 
               path="/profile/settings" 
               element={
-                <ProtectedRoute>
-                  <ProfileSettingsPage />
-                </ProtectedRoute>
+                <Navigate to="/profile" replace />
               } 
             />
             <Route 

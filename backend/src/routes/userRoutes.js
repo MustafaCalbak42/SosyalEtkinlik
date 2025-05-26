@@ -25,7 +25,8 @@ const {
   verifyEmail,
   resendVerificationEmail,
   getUserParticipatedEvents,
-  getUserById
+  getUserById,
+  getAllUsers
 } = require('../controllers/userController');
 
 // Middleware ve Validatörler
@@ -228,6 +229,13 @@ router.put('/unfollow/:userId', protect, unfollowUser);
  * @access  Private
  */
 router.get('/participated-events', protect, getUserParticipatedEvents);
+
+/**
+ * @route   GET /api/users/all
+ * @desc    Tüm kullanıcıları getir
+ * @access  Private
+ */
+router.get('/all', protect, getAllUsers);
 
 /**
  * @route   GET /api/users/:id
