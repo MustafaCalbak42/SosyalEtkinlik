@@ -12,7 +12,9 @@ import {
   Image,
   SafeAreaView,
   StatusBar,
-  Alert
+  Alert,
+  Modal,
+  Button
 } from 'react-native';
 import { TabView, TabBar } from 'react-native-tab-view';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -25,6 +27,7 @@ import { tr } from 'date-fns/locale';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moderationService from '../services/moderationService';
 import ShakeAnimation from '../components/ShakeAnimation';
+import * as messageService from '../services/messageService';
 
 // Socket.io için doğru URL'i oluştur (API_URL'den /api kısmını çıkar)
 const SOCKET_URL = API_URL.replace('/api', '');
@@ -52,6 +55,9 @@ const MessagesScreen = () => {
   const [socket, setSocket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [savedRefreshing, setSavedRefreshing] = useState(false);
+  const [savedLoading, setSavedLoading] = useState(false);
   
   // Tab yönetimi için state
   const [index, setIndex] = useState(0);
@@ -62,6 +68,7 @@ const MessagesScreen = () => {
   
   // Mesajlaşma için state
   const [privateConversations, setPrivateConversations] = useState([]);
+  const [savedConversations, setSavedConversations] = useState([]);
   const [eventConversations, setEventConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -70,6 +77,14 @@ const MessagesScreen = () => {
   const [typingUsers, setTypingUsers] = useState({});
   const [shakeAnimation, setShakeAnimation] = useState(false);
   const [moderationError, setModerationError] = useState('');
+  
+  // Kullanıcı keşfi için state'ler
+  const [userDiscoveryVisible, setUserDiscoveryVisible] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userPage, setUserPage] = useState(1);
+  const [hasMoreUsers, setHasMoreUsers] = useState(true);
+  
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const inputRef = useRef(null);
@@ -267,28 +282,87 @@ const MessagesScreen = () => {
     };
   }, [token, activeConversation, isLoggedIn]);
   
-  // Özel konuşmaları yükle
+  // Özel konuşmaları getir
   const fetchPrivateConversations = async () => {
-    if (!token) {
-      console.warn('[MessagesScreen] No token available for fetching private conversations');
-      return;
-    }
-    
     try {
-      console.log('[MessagesScreen] Fetching private conversations');
-      const messageService = await import('../services/messageService');
-      const result = await messageService.getPrivateConversations();
+      setLoading(true);
       
-      if (result.success) {
-        setPrivateConversations(result.data || []);
-        console.log('[MessagesScreen] Private conversations loaded:', result.data?.length || 0);
+      console.log('[MessagesScreen] Fetching private conversations');
+      
+      // Aktif konuşmaları getir
+      const activeResult = await messageService.getPrivateConversations();
+      let activeConversations = [];
+      
+      if (activeResult.success) {
+        console.log('[MessagesScreen] Loaded active conversations:', activeResult.data?.length || 0);
+        activeConversations = activeResult.data || [];
       } else {
-        console.warn('[MessagesScreen] Failed to load private conversations:', result.message);
-        setPrivateConversations([]);
+        console.warn('[MessagesScreen] Failed to load active conversations:', activeResult.message);
       }
+      
+      // Kaydedilmiş konuşmaları getir
+      const savedResult = await messageService.getSavedConversations();
+      let savedConversationsData = [];
+      
+      if (savedResult.success) {
+        console.log('[MessagesScreen] Loaded saved conversations:', savedResult.data?.length || 0);
+        
+        // Kaydedilmiş konuşmaları dönüştür
+        savedConversationsData = (savedResult.data || [])
+          .filter(saved => saved && saved.targetUser) // Geçerli kullanıcılar
+          .map(saved => ({
+            userId: saved.targetUser._id,
+            fullName: saved.targetUser.fullName || saved.targetUser.username || 'İsimsiz Kullanıcı',
+            username: saved.targetUser.username || 'kullanici',
+            profilePicture: saved.targetUser.profilePicture || null,
+            lastMessage: saved.lastMessage || '',
+            lastMessageDate: saved.lastMessageDate || new Date(),
+            unreadCount: 0,
+            user: saved.targetUser,
+            savedConversationId: saved._id, // Kaydedilmiş konuşma ID'si
+            isSaved: true
+          }));
+        
+        // Kaydedilmiş konuşmaları state'e kaydet
+        setSavedConversations(savedConversationsData);
+      } else {
+        console.warn('[MessagesScreen] Failed to load saved conversations:', savedResult.message);
+      }
+      
+      // Aktif konuşmaların ID'lerini al
+      const existingUserIds = activeConversations
+        .filter(conv => conv && conv.userId)
+        .map(conv => conv.userId);
+      
+      // Kaydedilmiş konuşmalardan henüz konuşma listesinde olmayanları filtrele
+      const uniqueSavedConversations = savedConversationsData
+        .filter(conv => conv && conv.userId && !existingUserIds.includes(conv.userId));
+      
+      // Tüm konuşmaları birleştir
+      const allConversations = [...activeConversations, ...uniqueSavedConversations];
+      
+      // Son mesaj tarihine göre sırala (en yeniler üstte)
+      try {
+        allConversations.sort((a, b) => {
+          const dateA = a && a.lastMessageDate ? new Date(a.lastMessageDate) : new Date(0);
+          const dateB = b && b.lastMessageDate ? new Date(b.lastMessageDate) : new Date(0);
+          return dateB - dateA;
+        });
+      } catch (sortError) {
+        console.error('[MessagesScreen] Error sorting conversations:', sortError);
+      }
+      
+      console.log('[MessagesScreen] Total conversations after merge:', allConversations.length);
+      setPrivateConversations(allConversations);
     } catch (error) {
-      console.error('[MessagesScreen] Konuşmalar yüklenirken hata:', error);
-      setPrivateConversations([]);
+      console.error('[MessagesScreen] Error in fetchPrivateConversations:', error);
+      Alert.alert(
+        'Hata',
+        'Konuşmalar yüklenirken beklenmeyen bir hata oluştu'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
   
@@ -351,14 +425,27 @@ const MessagesScreen = () => {
       return;
     }
     
-    console.log('[MessagesScreen] Loading conversations...');
-    setLoading(true);
-    Promise.all([fetchPrivateConversations(), fetchEventConversations()])
-      .finally(() => {
-        setLoading(false);
+    const loadConversations = async () => {
+      try {
+        console.log('[MessagesScreen] Loading conversations...');
+        setLoading(true);
+        
+        // Önce özel konuşmaları yükle
+        await fetchPrivateConversations();
+        
+        // Sonra etkinlik konuşmalarını yükle
+        await fetchEventConversations();
+        
         console.log('[MessagesScreen] Conversations loading completed');
-      });
-      
+      } catch (error) {
+        console.error('[MessagesScreen] Error loading conversations:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadConversations();
+    
     // Route'dan gelen paramları kontrol et
     if (route.params?.type && route.params?.id) {
       if (route.params.type === 'private') {
@@ -373,15 +460,36 @@ const MessagesScreen = () => {
   const openPrivateConversation = async (userId, name) => {
     if (!token) {
       console.warn('[MessagesScreen] No token available for opening private conversation');
+      Alert.alert('Hata', 'Oturum bilgisi bulunamadı, lütfen tekrar giriş yapın.');
       return;
     }
     
     try {
       setLoading(true);
       console.log('[MessagesScreen] Opening private conversation with user:', userId);
-      const messageService = await import('../services/messageService');
-      const result = await messageService.getPrivateMessages(userId);
       
+      // İlk olarak PrivateMessages ile deniyoruz
+      let result;
+      try {
+        result = await messageService.getPrivateMessages(userId);
+      } catch (primaryError) {
+        console.warn('[MessagesScreen] Error with getPrivateMessages, trying getMessages:', primaryError.message);
+        
+        // İlk metod başarısız olursa, getMessages ile deniyoruz
+        try {
+          result = await messageService.getMessages(userId);
+        } catch (secondaryError) {
+          console.error('[MessagesScreen] Both message fetching methods failed:', secondaryError.message);
+          
+          // İki yöntem de başarısız olursa, boş bir liste kullanacağız
+          result = {
+            success: true,
+            data: []
+          };
+        }
+      }
+      
+      // Konuşmayı aç
       if (result.success) {
         setMessages(result.data || []);
         setActiveConversation({
@@ -392,7 +500,13 @@ const MessagesScreen = () => {
         console.log('[MessagesScreen] Private conversation opened, message count:', result.data?.length || 0);
       } else {
         console.warn('[MessagesScreen] Failed to load private messages:', result.message);
+        // Hata durumunda bile konuşmayı açıyoruz, sadece boş liste gösteriyoruz
         setMessages([]);
+        setActiveConversation({
+          type: 'private',
+          id: userId,
+          name: name || 'Kullanıcı'
+        });
       }
       
       // Mesaj listesini aşağı kaydır
@@ -401,6 +515,13 @@ const MessagesScreen = () => {
       }, 200);
     } catch (error) {
       console.error('[MessagesScreen] Mesajlar yüklenirken hata:', error);
+      // Hata durumunda bile konuşmayı açıyoruz
+      setMessages([]);
+      setActiveConversation({
+        type: 'private',
+        id: userId,
+        name: name || 'Kullanıcı'
+      });
     } finally {
       setLoading(false);
     }
@@ -637,13 +758,188 @@ const MessagesScreen = () => {
   // Zaman formatla
   const formatTime = (dateString) => {
     try {
-      const date = new Date(dateString);
-      return formatDistanceToNow(date, { addSuffix: true, locale: tr });
+      if (!dateString) return '';
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true, locale: tr });
     } catch (error) {
+      console.error('[MessagesScreen] Tarih formatlanırken hata:', error);
       return '';
     }
   };
-
+  
+  // Kullanıcıları getir
+  const fetchUsers = async (page = 1) => {
+    try {
+      setLoadingUsers(true);
+      
+      console.log('[MessagesScreen] Kullanıcılar getiriliyor, sayfa:', page);
+      const userService = await import('../services/userService');
+      const result = await userService.getAllUsers(page, 10);
+      
+      if (result.success) {
+        if (page === 1) {
+          // Kullanıcı listesini sıfırla
+          setUsers(result.data);
+        } else {
+          // Mevcut listeye ekle
+          setUsers(prevUsers => [...prevUsers, ...result.data]);
+        }
+        
+        // Daha fazla kullanıcı var mı kontrol et
+        if (result.pagination && page >= result.pagination.totalPages) {
+          setHasMoreUsers(false);
+        } else {
+          setHasMoreUsers(true);
+        }
+        
+        console.log('[MessagesScreen] Kullanıcılar yüklendi:', result.data.length);
+      } else {
+        console.warn('[MessagesScreen] Kullanıcılar yüklenemedi:', result.message);
+      }
+    } catch (error) {
+      console.error('[MessagesScreen] Kullanıcıları getirme hatası:', error);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+  
+  // Kullanıcı keşfetme modalını aç
+  const openUserDiscovery = () => {
+    setUserDiscoveryVisible(true);
+    // Kullanıcıları yükle
+    setUserPage(1);
+    fetchUsers(1);
+  };
+  
+  // Daha fazla kullanıcı yükle
+  const loadMoreUsers = () => {
+    if (loadingUsers || !hasMoreUsers) return;
+    
+    const nextPage = userPage + 1;
+    setUserPage(nextPage);
+    fetchUsers(nextPage);
+  };
+  
+  // Kullanıcı seç ve mesajlaşma başlat
+  const handleSelectUser = async (selectedUser) => {
+    // Modalı kapat
+    setUserDiscoveryVisible(false);
+    
+    if (!selectedUser || !selectedUser._id) {
+      Alert.alert('Hata', 'Geçersiz kullanıcı seçildi');
+      return;
+    }
+    
+    console.log('[MessagesScreen] Kullanıcı seçildi:', selectedUser.username);
+    
+    try {
+      // Önce yükleme durumunu başlat
+      setLoading(true);
+      
+      // Önce seçilen kullanıcı zaten konuşmalar listesinde var mı kontrol et
+      const existingConversation = privateConversations.find(conv => 
+        conv.userId === selectedUser._id || conv.user?._id === selectedUser._id
+      );
+      
+      if (existingConversation) {
+        console.log('[MessagesScreen] Kullanıcı zaten konuşma listesinde var:', existingConversation.username);
+        // Direkt olarak mevcut konuşmayı aç
+        openPrivateConversation(selectedUser._id, selectedUser.fullName || selectedUser.username);
+        return;
+      }
+      
+      // Kullanıcı konuşma listesinde yoksa, veritabanına kaydet
+      console.log(`[MessagesScreen] ${selectedUser._id} ID'li kullanıcı konuşma listesine kaydediliyor...`);
+      
+      // Kaydetme işlemini gerçekleştir
+      const saveResult = await messageService.saveConversation({ 
+        targetUserId: selectedUser._id,
+        note: ''
+      });
+      
+      if (saveResult.success) {
+        console.log('[MessagesScreen] Kullanıcı başarıyla kaydedildi');
+        
+        // Konuşma listesini yenile
+        await fetchPrivateConversations();
+        
+        // Sonra kullanıcının mesajlarını yükle
+        openPrivateConversation(selectedUser._id, selectedUser.fullName || selectedUser.username);
+      } else {
+        console.warn('[MessagesScreen] Kullanıcı kaydedilemedi:', saveResult.message);
+        
+        // Kaydetme başarısız olsa bile konuşmayı açmayı dene
+        console.log('[MessagesScreen] Kaydetme başarısız oldu, konuşmayı açmayı deniyorum...');
+        openPrivateConversation(selectedUser._id, selectedUser.fullName || selectedUser.username);
+        
+        // Kullanıcıya bilgi ver
+        Alert.alert('Bilgi', 'Kullanıcı konuşma listesine eklenemedi, ancak mesajlaşabilirsiniz.');
+      }
+    } catch (error) {
+      console.error('[MessagesScreen] Kullanıcı seçme hatası:', error);
+      
+      // Hata olsa bile konuşmayı açmayı dene
+      try {
+        console.log('[MessagesScreen] Hata oluştu, konuşmayı açmayı deniyorum...');
+        openPrivateConversation(selectedUser._id, selectedUser.fullName || selectedUser.username);
+        Alert.alert('Bilgi', 'Konuşma listesine ekleme başarısız oldu, ancak mesajlaşabilirsiniz.');
+      } catch (openError) {
+        console.error('[MessagesScreen] Konuşma açma hatası:', openError);
+        Alert.alert('Hata', 'Mesajlaşma başlatılamadı. Lütfen tekrar deneyin.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Kaydedilmiş konuşmaları getir
+  const fetchSavedConversations = async () => {
+    try {
+      setSavedLoading(true);
+      
+      console.log('[MessagesScreen] Fetching saved conversations');
+      const result = await messageService.getSavedConversations();
+      
+      if (result.success) {
+        console.log('[MessagesScreen] Loaded saved conversations:', result.data?.length || 0);
+        
+        // Kaydedilmiş konuşmaları dönüştür
+        const savedConversationsData = (result.data || [])
+          .filter(saved => saved && saved.targetUser) // Geçerli kullanıcılar
+          .map(saved => ({
+            userId: saved.targetUser._id,
+            fullName: saved.targetUser.fullName || saved.targetUser.username || 'İsimsiz Kullanıcı',
+            username: saved.targetUser.username || 'kullanici',
+            profilePicture: saved.targetUser.profilePicture || null,
+            lastMessage: saved.lastMessage || '',
+            lastMessageDate: saved.lastMessageDate || new Date(),
+            unreadCount: 0,
+            user: saved.targetUser,
+            savedConversationId: saved._id, // Kaydedilmiş konuşma ID'si
+            isSaved: true
+          }));
+        
+        setSavedConversations(savedConversationsData);
+      } else {
+        console.warn('[MessagesScreen] Failed to load saved conversations:', result.message);
+        // Hata durumunda kullanıcıya bilgi ver
+        Alert.alert(
+          'Bilgi',
+          result.message || 'Kaydedilmiş konuşmalar yüklenemedi'
+        );
+        // Mevcut kaydedilmiş konuşmaları koruyalım
+      }
+    } catch (error) {
+      console.error('[MessagesScreen] Error in fetchSavedConversations:', error);
+      Alert.alert(
+        'Hata',
+        'Kaydedilmiş konuşmalar yüklenirken beklenmeyen bir hata oluştu'
+      );
+    } finally {
+      setSavedLoading(false);
+      setSavedRefreshing(false);
+    }
+  };
+  
   // Özel mesajlar tabı
   const PrivateConversationsTab = () => (
     <View style={styles.tabContent}>
@@ -715,7 +1011,7 @@ const MessagesScreen = () => {
           <Text style={styles.emptyText}>Henüz bir konuşmanız yok</Text>
           <TouchableOpacity 
             style={styles.emptyButton}
-            onPress={() => navigation.navigate('UserList')}
+            onPress={openUserDiscovery}
           >
             <Text style={styles.emptyButtonText}>Kullanıcıları Keşfet</Text>
           </TouchableOpacity>
@@ -803,7 +1099,7 @@ const MessagesScreen = () => {
           <Text style={styles.emptyText}>Katıldığınız etkinliklerin sohbetleri burada görünecek</Text>
           <TouchableOpacity 
             style={styles.emptyButton}
-            onPress={() => navigation.navigate('EventList')}
+            onPress={() => navigation.navigate('Home')}
           >
             <Text style={styles.emptyButtonText}>Etkinliklere Katıl</Text>
           </TouchableOpacity>
@@ -886,31 +1182,308 @@ const MessagesScreen = () => {
   const renderScene = ({ route }) => {
     switch (route.key) {
       case 'private':
-        return <PrivateConversationsTab />;
+        return (
+          activeConversation?.type === 'private' ? (
+            <KeyboardAvoidingView
+              style={styles.container}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            >
+              {/* Başlık */}
+              <View style={styles.header}>
+                <TouchableOpacity onPress={closeConversation} style={styles.backButton}>
+                  <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+                
+                <View style={styles.headerTitleContainer}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>
+                    {activeConversation.name}
+                  </Text>
+                </View>
+              </View>
+              
+              {/* Mesaj Listesi */}
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={THEME.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  ref={flatListRef}
+                  data={messages}
+                  keyExtractor={(item, index) => item._id || index.toString()}
+                  renderItem={renderMessageItem}
+                  contentContainerStyle={styles.messagesList}
+                  ListEmptyComponent={
+                    <View style={styles.emptyMessagesContainer}>
+                      <Text style={styles.emptyMessagesText}>
+                        {`${activeConversation.name} ile mesajlaşmaya başlayın.`}
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+              
+              {/* Mesaj Giriş Alanı */}
+              <View style={styles.inputContainer}>
+                {/* Moderasyon hatası */}
+                {moderationError && (
+                  <Text style={styles.errorText}>{moderationError}</Text>
+                )}
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {/* Sarsma animasyonu ile input */}
+                  <ShakeAnimation 
+                    shake={shakeAnimation}
+                    onAnimationEnd={() => setShakeAnimation(false)}
+                    style={{ flex: 1 }}
+                  >
+                    <TextInput
+                      ref={inputRef}
+                      style={styles.input}
+                      value={newMessage}
+                      onChangeText={handleInputChange}
+                      placeholder="Mesajınızı yazın..."
+                      multiline
+                    />
+                  </ShakeAnimation>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.sendButton,
+                      !newMessage.trim() && styles.sendButtonDisabled
+                    ]}
+                    onPress={sendMessage}
+                    disabled={!newMessage.trim()}
+                  >
+                    <Ionicons name="send" size={20} color="white" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          ) : (
+            <PrivateConversationsTab />
+          )
+        );
       case 'event':
-        return <EventConversationsTab />;
+        return (
+          activeConversation?.type === 'event' ? (
+            <KeyboardAvoidingView
+              style={styles.container}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            >
+              {/* Başlık */}
+              <View style={styles.header}>
+                <TouchableOpacity onPress={closeConversation} style={styles.backButton}>
+                  <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+                
+                <View style={styles.headerTitleContainer}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>
+                    {activeConversation.name}
+                  </Text>
+                  <Text style={styles.headerSubtitle}>Etkinlik Grup Sohbeti</Text>
+                </View>
+                
+                <TouchableOpacity 
+                  style={styles.headerButton}
+                  onPress={() => navigation.navigate('EventDetail', { id: activeConversation.id })}
+                >
+                  <MaterialIcons name="info-outline" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
+              
+              {/* Mesaj Listesi */}
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={THEME.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  ref={flatListRef}
+                  data={messages}
+                  keyExtractor={(item, index) => item._id || index.toString()}
+                  renderItem={renderMessageItem}
+                  contentContainerStyle={styles.messagesList}
+                  ListEmptyComponent={
+                    <View style={styles.emptyMessagesContainer}>
+                      <Text style={styles.emptyMessagesText}>
+                        {`${activeConversation.name} etkinliğinde mesajlaşmaya başlayın.`}
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+              
+              {/* Mesaj Giriş Alanı */}
+              <View style={styles.inputContainer}>
+                {/* Moderasyon hatası */}
+                {moderationError && (
+                  <Text style={styles.errorText}>{moderationError}</Text>
+                )}
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {/* Sarsma animasyonu ile input */}
+                  <ShakeAnimation 
+                    shake={shakeAnimation}
+                    onAnimationEnd={() => setShakeAnimation(false)}
+                    style={{ flex: 1 }}
+                  >
+                    <TextInput
+                      ref={inputRef}
+                      style={styles.input}
+                      value={newMessage}
+                      onChangeText={handleInputChange}
+                      placeholder="Etkinlik grubuna mesaj yazın..."
+                      multiline
+                    />
+                  </ShakeAnimation>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.sendButton,
+                      !newMessage.trim() && styles.sendButtonDisabled
+                    ]}
+                    onPress={sendMessage}
+                    disabled={!newMessage.trim()}
+                  >
+                    <Ionicons name="send" size={20} color="white" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          ) : (
+            <EventConversationsTab />
+          )
+        );
       default:
         return null;
     }
   };
+  
+  // Kullanıcı Keşfetme Modalı
+  const UserDiscoveryModal = () => (
+    <Modal
+      visible={userDiscoveryVisible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={() => setUserDiscoveryVisible(false)}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: THEME.background }}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity 
+            onPress={() => setUserDiscoveryVisible(false)}
+            style={{ padding: 10 }}
+          >
+            <Ionicons name="close" size={24} color={THEME.text} />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Kullanıcıları Keşfet</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        {loadingUsers && users.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={THEME.primary} />
+          </View>
+        ) : users.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Henüz hiç kullanıcı yok.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={users}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => {
+              // Kendisi mi kontrol et
+              const isCurrentUser = userProfile?.id === item._id;
+              
+              return (
+                <TouchableOpacity
+                  onPress={() => !isCurrentUser && handleSelectUser(item)}
+                  style={[
+                    styles.userItem,
+                    isCurrentUser && { backgroundColor: `${THEME.primary}20` }
+                  ]}
+                  disabled={isCurrentUser}
+                >
+                  <View style={styles.userItemAvatar}>
+                    {item.profilePicture ? (
+                      <Image 
+                        source={{ uri: `${API_URL}/uploads/${item.profilePicture}` }}
+                        style={styles.userAvatar}
+                      />
+                    ) : (
+                      <View style={[styles.userAvatar, { backgroundColor: THEME.primary }]}>
+                        <Text style={styles.userAvatarText}>
+                          {item.fullName?.charAt(0) || item.username?.charAt(0) || '?'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.userItemContent}>
+                    <Text style={styles.userName}>
+                      {isCurrentUser && <Text style={{ fontWeight: 'bold' }}>(BEN) </Text>}
+                      {item.fullName || item.username}
+                    </Text>
+                    <Text style={styles.userUsername}>@{item.username}</Text>
+                    {item.bio && (
+                      <Text style={styles.userBio} numberOfLines={2}>
+                        {item.bio}
+                      </Text>
+                    )}
+                    {item.hobbies && item.hobbies.length > 0 && (
+                      <View style={styles.userHobbies}>
+                        {item.hobbies.slice(0, 3).map((hobby, index) => (
+                          <View key={index} style={styles.hobbyChip}>
+                            <Text style={styles.hobbyChipText}>
+                              {typeof hobby === 'object' ? hobby.name : hobby}
+                            </Text>
+                          </View>
+                        ))}
+                        {item.hobbies.length > 3 && (
+                          <View style={styles.hobbyChip}>
+                            <Text style={styles.hobbyChipText}>+{item.hobbies.length - 3}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            onEndReached={loadMoreUsers}
+            onEndReachedThreshold={0.2}
+            ListFooterComponent={
+              loadingUsers ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={THEME.primary} />
+                </View>
+              ) : !hasMoreUsers && users.length > 0 ? (
+                <Text style={styles.endListText}>Başka kullanıcı bulunamadı</Text>
+              ) : null
+            }
+          />
+        )}
+      </SafeAreaView>
+    </Modal>
+  );
   
   // Giriş yapılmamışsa bilgi mesajı göster
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar backgroundColor={THEME.primary} barStyle="light-content" />
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Mesajlar</Text>
-        </View>
-        <View style={styles.emptyContainer}>
-          <MaterialIcons name="login" size={50} color={THEME.darkGray} />
-          <Text style={styles.emptyText}>Mesajlaşmak için giriş yapmanız gerekiyor</Text>
-          <TouchableOpacity 
-            style={styles.emptyButton}
-            onPress={() => navigation.navigate('Auth', { screen: 'Login' })}
-          >
-            <Text style={styles.emptyButtonText}>Giriş Yap</Text>
-          </TouchableOpacity>
+        <View style={styles.loginRequiredContainer}>
+          <Text style={styles.loginRequiredText}>
+            Mesajlaşma özelliğini kullanmak için giriş yapmalısınız.
+          </Text>
+          <Button
+            title="Giriş Yap"
+            onPress={() => navigation.navigate('Login')}
+            color={THEME.primary}
+          />
         </View>
       </SafeAreaView>
     );
@@ -919,157 +1492,33 @@ const MessagesScreen = () => {
   // Ana bileşen render
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={THEME.primary} barStyle="light-content" />
+      <StatusBar backgroundColor="#fff" barStyle="dark-content" />
       
-      {activeConversation ? (
-        // Mesajlaşma ekranı
-        <KeyboardAvoidingView
-          style={styles.container}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
-          {/* Başlık */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={closeConversation} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="white" />
-            </TouchableOpacity>
-            
-            <View style={styles.headerTitleContainer}>
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {activeConversation.name}
-              </Text>
-              {activeConversation.type === 'event' && (
-                <Text style={styles.headerSubtitle}>Etkinlik Grup Sohbeti</Text>
-              )}
-            </View>
-            
-            {activeConversation.type === 'event' && (
-              <TouchableOpacity 
-                style={styles.headerButton}
-                onPress={() => navigation.navigate('EventDetail', { id: activeConversation.id })}
-              >
-                <MaterialIcons name="info-outline" size={24} color="white" />
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          {/* Etkinlik bilgileri (eğer etkinlik mesajıysa) */}
-          {activeConversation.type === 'event' && activeConversation.description && (
-            <View style={styles.eventInfoContainer}>
-              <MaterialIcons name="event" size={20} color={THEME.primary} style={{ marginRight: 8 }} />
-              <View style={styles.eventInfoTextContainer}>
-                <Text style={styles.eventInfoText} numberOfLines={2}>
-                  {activeConversation.description}
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.participantsButton}>
-                <Text style={styles.participantsButtonText}>Katılımcılar</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {/* Mesaj Listesi */}
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={THEME.primary} />
-            </View>
-          ) : (
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              keyExtractor={(item, index) => item._id || index.toString()}
-              renderItem={renderMessageItem}
-              contentContainerStyle={styles.messagesList}
-              ListEmptyComponent={
-                <View style={styles.emptyMessagesContainer}>
-                  <Text style={styles.emptyMessagesText}>
-                    {activeConversation.type === 'event' 
-                      ? `${activeConversation.name} etkinliğinde mesajlaşmaya başlayın.` 
-                      : `${activeConversation.name} ile mesajlaşmaya başlayın.`
-                    }
-                  </Text>
-                </View>
-              }
-              ListFooterComponent={
-                Object.values(typingUsers).some(user => user !== null) && (
-                  <View style={styles.typingContainer}>
-                    <View style={styles.typingBubble}>
-                      <Text style={styles.typingText}>
-                        {Object.values(typingUsers)
-                          .filter(user => user !== null)
-                          .map(user => user.username)
-                          .join(', ')} yazıyor...
-                      </Text>
-                      <View style={styles.typingAnimation}>
-                        <View style={[styles.typingDot, { animationDelay: '0s' }]} />
-                        <View style={[styles.typingDot, { animationDelay: '0.3s' }]} />
-                        <View style={[styles.typingDot, { animationDelay: '0.6s' }]} />
-                      </View>
-                    </View>
-                  </View>
-                )
-              }
-            />
-          )}
-          
-          {/* Mesaj Giriş Alanı */}
-          <View style={styles.inputContainer}>
-            <View style={styles.inputActionsContainer}>
-              <TouchableOpacity style={styles.inputActionButton}>
-                <MaterialIcons name="insert-emoticon" size={24} color={THEME.darkGray} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.inputActionButton}>
-                <MaterialIcons name="attach-file" size={24} color={THEME.darkGray} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.inputActionButton}>
-                <MaterialIcons name="photo-camera" size={24} color={THEME.darkGray} />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Moderasyon hatası */}
-            {moderationError && (
-              <Text style={styles.errorText}>{moderationError}</Text>
-            )}
-            
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {/* Sarsma animasyonu ile input */}
-              <ShakeAnimation 
-                shake={shakeAnimation}
-                onAnimationEnd={() => setShakeAnimation(false)}
-                style={{ flex: 1 }}
-              >
-                <TextInput
-                  ref={inputRef}
-                  style={styles.input}
-                  value={newMessage}
-                  onChangeText={handleInputChange}
-                  placeholder={
-                    activeConversation.type === 'event'
-                      ? "Etkinlik grubuna mesaj yazın..."
-                      : "Mesajınızı yazın..."
-                  }
-                  multiline
-                />
-              </ShakeAnimation>
-              
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  !newMessage.trim() && styles.sendButtonDisabled
-                ]}
-                onPress={sendMessage}
-                disabled={!newMessage.trim()}
-              >
-                <Ionicons name="send" size={20} color="white" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+      {!isLoggedIn ? (
+        <View style={styles.loginRequiredContainer}>
+          <Text style={styles.loginRequiredText}>
+            Mesajlaşma özelliğini kullanmak için giriş yapmalısınız.
+          </Text>
+          <Button
+            title="Giriş Yap"
+            onPress={() => navigation.navigate('Login')}
+            color={THEME.primary}
+          />
+        </View>
       ) : (
-        // Tab görünümü (konuşma listesi)
-        <View style={styles.container}>
+        <>
+          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Mesajlar</Text>
+            
+            {/* Kullanıcıları Keşfet butonu */}
+            <TouchableOpacity 
+              style={styles.discoverButton}
+              onPress={openUserDiscovery}
+            >
+              <Ionicons name="people" size={16} color="white" style={{marginRight: 4}} />
+              <Text style={styles.discoverButtonText}>Kullanıcıları Keşfet</Text>
+            </TouchableOpacity>
           </View>
           
           <TabView
@@ -1080,15 +1529,19 @@ const MessagesScreen = () => {
             renderTabBar={props => (
               <TabBar
                 {...props}
-                style={{ backgroundColor: THEME.primary }}
-                indicatorStyle={{ backgroundColor: 'white' }}
-                activeColor="white"
-                inactiveColor="rgba(255, 255, 255, 0.7)"
-                labelStyle={{ fontWeight: 'bold' }}
+                indicatorStyle={{ backgroundColor: THEME.primary }}
+                style={{ backgroundColor: '#fff' }}
+                labelStyle={{ color: THEME.text, textTransform: 'none' }}
+                activeColor={THEME.primary}
+                inactiveColor={THEME.lightText}
               />
             )}
+            style={styles.tabView}
           />
-        </View>
+          
+          {/* Kullanıcı Keşfetme Modalı */}
+          <UserDiscoveryModal />
+        </>
       )}
     </SafeAreaView>
   );
@@ -1441,6 +1894,101 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: THEME.text,
+    flex: 1,
+  },
+  userItem: {
+    flexDirection: 'row',
+    padding: 10,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  userItemAvatar: {
+    marginRight: 10,
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  userItemContent: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#212121',
+  },
+  userUsername: {
+    fontSize: 12,
+    color: '#757575',
+  },
+  userBio: {
+    fontSize: 14,
+    color: '#757575',
+  },
+  userHobbies: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  hobbyChip: {
+    backgroundColor: '#F0F0F0',
+    borderRadius: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginRight: 4,
+  },
+  hobbyChipText: {
+    fontSize: 10,
+    color: THEME.primary,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#f0f0f0',
+  },
+  endListText: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+  },
+  loginRequiredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loginRequiredText: {
+    fontSize: 16,
+    color: '#757575',
+    textAlign: 'center',
+    marginVertical: 16,
+  },
+  discoverButton: {
+    backgroundColor: THEME.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginLeft: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  discoverButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  tabView: {
+    flex: 1,
   },
 });
 

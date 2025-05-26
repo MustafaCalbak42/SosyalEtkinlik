@@ -595,6 +595,24 @@ export const getUserById = async (userId) => {
 };
 
 /**
+ * Tüm kullanıcıları getirir (sayfalama ile)
+ * @param {number} page - Sayfa numarası
+ * @param {number} limit - Sayfa başına kayıt sayısı
+ * @returns {Promise<Object>}
+ */
+export const getAllUsers = async (page = 1, limit = 10) => {
+  try {
+    const response = await axiosInstance.get(`${API_URL}/all`, {
+      params: { page, limit }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Kullanıcıları getirme hatası:', error);
+    throw handleError(error);
+  }
+};
+
+/**
  * API hata işleme
  * @param {Error} error - Axios hatası
  * @returns {Error} - İşlenmiş hata

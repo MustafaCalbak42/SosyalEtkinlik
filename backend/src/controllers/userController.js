@@ -1265,6 +1265,49 @@ const getUserById = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Tüm kullanıcıları getir
+ * @route   GET /api/users/all
+ * @access  Private
+ */
+const getAllUsers = async (req, res) => {
+  try {
+    // Sayfalama için parametreleri al
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    // Kullanıcıları getir (şifre hariç)
+    const users = await User.find()
+      .select('-password')
+      .select('username fullName profilePicture bio email hobbies')
+      .populate('hobbies', 'name category')
+      .skip(skip)
+      .limit(limit);
+      
+    // Toplam kullanıcı sayısını al
+    const totalUsers = await User.countDocuments();
+    
+    res.json({
+      success: true,
+      data: users,
+      pagination: {
+        page,
+        limit,
+        totalUsers,
+        totalPages: Math.ceil(totalUsers / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Tüm kullanıcıları getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1283,5 +1326,6 @@ module.exports = {
   verifyEmail,
   resendVerificationEmail,
   getUserParticipatedEvents,
-  getUserById
+  getUserById,
+  getAllUsers
 }; 

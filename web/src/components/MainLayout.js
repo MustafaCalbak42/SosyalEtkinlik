@@ -120,10 +120,6 @@ const MainLayout = ({ children }) => {
                   <AccountCircle fontSize="small" sx={{ mr: 1 }} />
                   Profilim
                 </MenuItem>
-                <MenuItem onClick={() => handleMenuItemClick('/profile/settings')}>
-                  <Settings fontSize="small" sx={{ mr: 1 }} />
-                  Ayarlar
-                </MenuItem>
                 <MenuItem onClick={handleLogout}>
                   <Logout fontSize="small" sx={{ mr: 1 }} />
                   Çıkış Yap

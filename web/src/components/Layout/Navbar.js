@@ -86,7 +86,7 @@ const Navbar = () => {
 
   const authItems = isAuthenticated 
     ? [
-        { text: 'Profilim', icon: <AccountCircle />, action: () => navigate('/profile/settings') },
+        { text: 'Profilim', icon: <AccountCircle />, action: () => navigate('/profile') },
         { text: 'Çıkış Yap', icon: <Logout />, action: handleLogout }
       ]
     : [

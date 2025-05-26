@@ -533,6 +533,7 @@ const api = {
     unfollow: (userId) => apiClient.put(`/users/unfollow/${userId}`),
     getCurrentUser: () => apiClient.get('/users/profile'),
     updateProfile: (userData) => apiClient.put('/users/profile', userData),
+    getUsers: (page = 1, limit = 10) => apiClient.get('/users', { params: { page, limit } }),
   },
   
   // Mesajlaşma
@@ -545,6 +546,11 @@ const api = {
       apiClient.post('/messages/private', { recipientId, content }),
     sendEventMessage: (eventId, content) => 
       apiClient.post('/messages/event', { eventId, content }),
+    // Kaydedilmiş konuşmalar için eklenen metodlar
+    getSavedConversations: () => apiClient.get('/saved-conversations'),
+    saveConversation: (data) => apiClient.post('/saved-conversations', data),
+    deleteSavedConversation: (conversationId) => 
+      apiClient.delete(`/saved-conversations/${conversationId}`),
   }
 };
 
