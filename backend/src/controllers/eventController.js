@@ -85,13 +85,56 @@ const createEvent = async (req, res) => {
       });
     }
 
+    // Konum bilgisini kontrol et ve doğru format olduğundan emin ol
+    let validatedLocation = location;
+    
+    // Eğer konum bilgisi düzgün formatta değilse, düzenle
+    if (!location || typeof location !== 'object') {
+      console.error('Geçersiz konum formatı:', location);
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz konum formatı'
+      });
+    }
+    
+    // GeoJSON Point formatında olduğundan emin ol
+    if (location.type !== 'Point') {
+      console.log('Konum tipi "Point" değil, düzeltiliyor:', location.type);
+      validatedLocation.type = 'Point';
+    }
+    
+    // Koordinatları kontrol et
+    if (!location.coordinates || 
+        !Array.isArray(location.coordinates) || 
+        location.coordinates.length !== 2 ||
+        typeof location.coordinates[0] !== 'number' ||
+        typeof location.coordinates[1] !== 'number') {
+      console.error('Geçersiz koordinat formatı:', location.coordinates);
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz koordinat formatı - [longitude, latitude] dizi olmalı'
+      });
+    }
+    
+    // Koordinatların geçerli aralıkta olup olmadığını kontrol et
+    const [longitude, latitude] = location.coordinates;
+    if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
+      console.error('Koordinatlar geçerli aralık dışında:', location.coordinates);
+      return res.status(400).json({
+        success: false,
+        message: 'Koordinatlar geçerli aralık dışında'
+      });
+    }
+    
+    console.log('Doğrulanmış konum bilgisi:', validatedLocation);
+
     // Etkinlik oluştur
     const event = new Event({
       title,
       description,
       organizer: req.user.id,
       hobby,
-      location,
+      location: validatedLocation,
       startDate: startDateObj,
       endDate: endDateObj,
       maxParticipants: parseInt(maxParticipants) || 10,
@@ -579,31 +622,109 @@ const getEventParticipants = async (req, res) => {
 // @access  Public
 const getNearbyEvents = async (req, res) => {
   try {
-    const { longitude, latitude, maxDistance = 10000 } = req.query; // maxDistance metre cinsinden
+    // Sayfalama parametrelerini al
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
     
-    if (!longitude || !latitude) {
-      return res.status(400).json({ message: 'Konum bilgisi gerekli' });
+    // Konum ve mesafe parametreleri
+    const { lat, lng, maxDistance = 20 } = req.query; // maxDistance km cinsinden (varsayılan 20km)
+    
+    console.log(`[eventController] Yakındaki etkinlikler getiriliyor - koordinatlar: [${lat}, ${lng}], maksimum mesafe: ${maxDistance}km`);
+    
+    if (!lat || !lng) {
+      console.error('[eventController] Konum bilgisi eksik:', { lat, lng });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Konum bilgisi (lat, lng) gerekli' 
+      });
     }
     
-    const events = await Event.find({
-      'location.coordinates': {
-        $near: {
-          $geometry: {
+    // Konum ve maksimum mesafe ile sorgu oluştur
+    // MongoDB'de $geoNear kullanalım, 2dsphere index ile daha etkili çalışır
+    const events = await Event.aggregate([
+      {
+        $geoNear: {
+          near: {
             type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            coordinates: [parseFloat(lng), parseFloat(lat)] // MongoDB GeoJSON formatı: [longitude, latitude]
           },
-          $maxDistance: parseInt(maxDistance)
+          distanceField: 'distance', // Mesafe bilgisi bu alanda tutulacak
+          maxDistance: parseFloat(maxDistance) * 1000, // Km'yi metreye çevir
+          spherical: true,
+          query: { status: 'active' } // Sadece aktif etkinlikleri getir
         }
       },
-      status: 'active'
-    })
-      .populate('organizer', 'username fullName')
-      .populate('hobby', 'name category');
+      { $skip: skip },
+      { $limit: limit }
+    ]);
     
-    res.json(events);
+    // Toplam etkinlik sayısını bul
+    const totalCount = await Event.aggregate([
+      {
+        $geoNear: {
+          near: {
+            type: 'Point',
+            coordinates: [parseFloat(lng), parseFloat(lat)]
+          },
+          distanceField: 'distance',
+          maxDistance: parseFloat(maxDistance) * 1000,
+          spherical: true,
+          query: { status: 'active' }
+        }
+      },
+      { $count: 'total' }
+    ]);
+    
+    const total = totalCount.length > 0 ? totalCount[0].total : 0;
+    console.log(`[eventController] ${total} etkinlik bulundu ${maxDistance}km içinde`);
+    
+    // Etkinlik listesini zenginleştir (populate işlemi aggregate ile doğrudan yapılamaz)
+    // Her etkinlik için organizatör ve hobi bilgilerini getir
+    const populatedEvents = await Event.populate(events, [
+      { path: 'organizer', select: 'username fullName profilePicture' },
+      { path: 'hobby', select: 'name category' }
+    ]);
+    
+    // Kilometre cinsinden mesafe değerini ekle
+    const eventsWithDistance = populatedEvents.map(event => {
+      // Mesafeyi metre -> km'ye çevir ve 1 ondalık basamağa yuvarla
+      const distanceInKm = parseFloat((event.distance / 1000).toFixed(1));
+      return {
+        ...event,
+        distance: distanceInKm
+      };
+    });
+    
+    console.log(`[eventController] ${eventsWithDistance.length} etkinlik döndürülüyor`);
+    
+    // İlk birkaç etkinliğin bilgilerini logla
+    if (eventsWithDistance.length > 0) {
+      console.log('[eventController] İlk birkaç yakın etkinlik:');
+      eventsWithDistance.slice(0, Math.min(3, eventsWithDistance.length)).forEach((event, i) => {
+        console.log(`[${i}] ${event.title}: ${event.distance}km uzaklıkta, konum: ${JSON.stringify(event.location)}`);
+      });
+    }
+    
+    // Standart API yanıt formatı
+    res.json({
+      success: true,
+      data: eventsWithDistance,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      },
+      message: `${maxDistance}km mesafedeki etkinlikler listeleniyor (${eventsWithDistance.length}/${total})`
+    });
   } catch (error) {
-    console.error('Yakındaki etkinlikleri getirme hatası:', error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('[eventController] Yakındaki etkinlikleri getirme hatası:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Yakındaki etkinlikler getirilirken bir hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'SERVER_ERROR'
+    });
   }
 };
 

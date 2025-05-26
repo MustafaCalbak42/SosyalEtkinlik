@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllHobbies } from '../services/hobbyService';
+import MapSelector from '../components/MapSelector';
 import api from '../shared/api/apiClient';
 import colors from '../shared/theme/colors';
 
@@ -41,6 +42,7 @@ const CreateEventScreen = ({ navigation }) => {
     hobbyId: '',
     address: '',
     city: userProfile?.location?.address?.split(',')[0]?.trim() || '',
+    coordinates: null, // Haritadan seçilen koordinatlar
     startDate: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Yarın
     endDate: new Date(new Date().getTime() + 27 * 60 * 60 * 1000),   // Yarın + 3 saat
     maxParticipants: '10',
@@ -160,6 +162,36 @@ const CreateEventScreen = ({ navigation }) => {
     });
   };
 
+  // Konum seçildiğinde çağrılacak fonksiyonu ekle
+  const handleLocationSelect = (locationData) => {
+    if (locationData) {
+      // Haritadan gelen adres bilgisini işle
+      const addressParts = locationData.address.split(',');
+      // Adresin son kısmından şehir bilgisini çıkarmaya çalış
+      const city = addressParts.length > 1 ? 
+        (addressParts.find(part => part.includes('İstanbul') || part.includes('Ankara') || 
+          part.includes('İzmir') || part.includes('Bursa') || part.includes('Antalya'))) || 
+        addressParts[addressParts.length - 3]?.trim() : '';
+
+      setFormData({
+        ...formData,
+        address: locationData.address,
+        city: city || formData.city, // Şehir bulunamazsa mevcut değeri koru
+        coordinates: locationData.coordinates // [latitude, longitude] formatında
+      });
+      
+      // Form hatalarını temizle
+      if (formErrors.address || formErrors.city || formErrors.coordinates) {
+        setFormErrors({
+          ...formErrors,
+          address: null,
+          city: null,
+          coordinates: null
+        });
+      }
+    }
+  };
+
   // Form doğrulama
   const validateForm = () => {
     const errors = {};
@@ -169,6 +201,7 @@ const CreateEventScreen = ({ navigation }) => {
     if (!formData.hobbyId) errors.hobbyId = 'Hobi kategorisi seçmelisiniz';
     if (!formData.address.trim()) errors.address = 'Etkinlik adresi zorunludur';
     if (!formData.city.trim()) errors.city = 'Şehir zorunludur';
+    if (!formData.coordinates) errors.coordinates = 'Haritadan konum seçmelisiniz';
     
     // Başlangıç tarihi kontrolü
     const now = new Date();
@@ -204,15 +237,6 @@ const CreateEventScreen = ({ navigation }) => {
       const startDate = new Date(formData.startDate);
       const endDate = new Date(formData.endDate);
 
-      // Konum için varsayılan koordinatlar
-      const defaultCoordinates = {
-        'İstanbul': [29.0121795, 41.0053215],
-        'Ankara': [32.8597419, 39.9333635],
-        'İzmir': [27.142826, 38.423733],
-        'Bursa': [29.0609636, 40.1885425],
-        'Antalya': [30.7133233, 36.8968908]
-      };
-      
       // API'ye gönderilecek verileri hazırla
       const eventData = {
         title: formData.title,
@@ -220,8 +244,12 @@ const CreateEventScreen = ({ navigation }) => {
         hobby: formData.hobbyId,
         location: {
           type: 'Point',
-          coordinates: defaultCoordinates[formData.city] || [29.0121795, 41.0053215], // Varsayılan İstanbul
-          address: `${formData.address}, ${formData.city}`
+          coordinates: formData.coordinates ? 
+            // MongoDB GeoJSON formatı: [longitude, latitude]
+            [formData.coordinates[1], formData.coordinates[0]] : 
+            // Varsayılan koordinatlar (şehir merkezleri)
+            getDefaultCityCoordinates(formData.city),
+          address: formData.address
         },
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
@@ -247,10 +275,33 @@ const CreateEventScreen = ({ navigation }) => {
       }
     } catch (error) {
       console.error('[CreateEventScreen] Create event error:', error);
-      setError(error.message || 'Etkinlik oluşturulurken bir hata oluştu');
+      setError('Etkinlik oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Şehir adından varsayılan koordinatları döndüren yardımcı fonksiyon
+  const getDefaultCityCoordinates = (cityName) => {
+    const defaultCoordinates = {
+      'İstanbul': [29.0121795, 41.0053215],
+      'Ankara': [32.8597419, 39.9333635],
+      'İzmir': [27.142826, 38.423733],
+      'Bursa': [29.0609636, 40.1885425],
+      'Antalya': [30.7133233, 36.8968908],
+      'Elazığ': [39.2225, 38.6748]
+    };
+    
+    const normalizedCityName = cityName.trim();
+    
+    for (const [city, coords] of Object.entries(defaultCoordinates)) {
+      if (normalizedCityName.includes(city)) {
+        return coords;
+      }
+    }
+    
+    // Varsayılan olarak İstanbul koordinatlarını döndür
+    return [29.0121795, 41.0053215];
   };
 
   // Formatlanmış tarih/saat
@@ -345,6 +396,21 @@ const CreateEventScreen = ({ navigation }) => {
               />
               {formErrors.description ? (
                 <Text style={styles.errorText}>{formErrors.description}</Text>
+              ) : null}
+            </View>
+            
+            {/* Harita Seçici */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Etkinlik Konumu *</Text>
+              <Text style={styles.helpText}>
+                Etkinlik konumunu harita üzerinde dokunarak seçin. Bu işaretçi etkinlik konumunu belirleyecektir.
+              </Text>
+              <MapSelector 
+                onLocationSelect={handleLocationSelect}
+                initialPosition={formData.coordinates}
+              />
+              {formErrors.coordinates ? (
+                <Text style={styles.errorText}>{formErrors.coordinates}</Text>
               ) : null}
             </View>
             
@@ -757,6 +823,11 @@ const styles = StyleSheet.create({
   successText: {
     color: '#2e7d32',
     fontSize: 14
+  },
+  helpText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 12
   }
 });
 

@@ -17,7 +17,8 @@ import {
   AccessTime, 
   PeopleAlt, 
   BookmarkBorder, 
-  Bookmark 
+  Bookmark,
+  DirectionsWalk
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -53,7 +54,8 @@ const EventCard = ({ event }) => {
     location, 
     attendees, 
     maxAttendees, 
-    category 
+    category,
+    distance
   } = event;
 
   const eventId = _id || id; // Support both _id (MongoDB) and id formats
@@ -159,6 +161,15 @@ const EventCard = ({ event }) => {
             {location}
           </Typography>
         </Box>
+        
+        {distance && (
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <DirectionsWalk fontSize="small" color="action" sx={{ mr: 1 }} />
+            <Typography variant="body2" color="primary.main" fontWeight="medium">
+              {distance}
+            </Typography>
+          </Box>
+        )}
         
         <Box sx={{ mt: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>

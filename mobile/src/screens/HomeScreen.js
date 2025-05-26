@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   StatusBar,
-  FlatList
+  FlatList,
+  Alert,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,8 +21,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import EventCard from '../components/EventCard';
 import colors from '../shared/theme/colors';
-import { getAllEvents, getRecommendedEvents } from '../services/eventService';
+import { getAllEvents, getRecommendedEvents, getNearbyEvents } from '../services/eventService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 
@@ -29,12 +32,17 @@ const HomeScreen = ({ navigation }) => {
   const [events, setEvents] = useState([]);
   const [recommendedEvents, setRecommendedEvents] = useState([]);
   const [popularEvents, setPopularEvents] = useState([]);
+  const [nearbyEvents, setNearbyEvents] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('Tümü');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recommendedLoading, setRecommendedLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState('');
+  const [userCoordinates, setUserCoordinates] = useState(null);
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState(null);
   const [tabValue, setTabValue] = useState(0); // 0: Etkinlikler, 1: Yakınımdaki, 2: Arkadaşlarım
   const [pagination, setPagination] = useState({
     page: 1,
@@ -218,7 +226,96 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  // Yenileme işlemi
+  // Konum izni isteme ve kullanıcı konumunu alma
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermissionStatus(status);
+      
+      if (status === 'granted') {
+        return true;
+      } else {
+        Alert.alert(
+          'Konum İzni Gerekli',
+          'Yakınınızdaki etkinlikleri görmek için konum izni vermeniz gerekmektedir.',
+          [{ text: 'Tamam' }]
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Konum izni alınırken hata:', error);
+      setNearbyError('Konum izni alınamadı: ' + error.message);
+      return false;
+    }
+  };
+
+  // Kullanıcının konumunu al ve yakındaki etkinlikleri getir
+  const getUserLocationAndFetchNearbyEvents = async () => {
+    setNearbyLoading(true);
+    setNearbyError('');
+    
+    try {
+      // Konum izni kontrol et
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        setNearbyLoading(false);
+        return;
+      }
+      
+      // Kullanıcı konumunu al
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced
+      });
+      
+      console.log('[HomeScreen] Kullanıcı konumu alındı:', location.coords);
+      
+      const { latitude, longitude } = location.coords;
+      setUserCoordinates([latitude, longitude]);
+      
+      // Yakındaki etkinlikleri getir
+      await fetchNearbyEvents([latitude, longitude]);
+    } catch (error) {
+      console.error('[HomeScreen] Konum alınırken hata:', error);
+      setNearbyError('Konumunuz alınamadı: ' + error.message);
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
+  // Yakındaki etkinlikleri getir
+  const fetchNearbyEvents = async (coords) => {
+    if (!coords) {
+      setNearbyError('Konum bilgisi gerekli. Lütfen konum izni verin.');
+      setNearbyLoading(false);
+      return;
+    }
+    
+    setNearbyLoading(true);
+    setNearbyError('');
+    
+    try {
+      // 20 km içindeki etkinlikleri getir
+      const response = await getNearbyEvents(coords, 20, 1, pagination.limit);
+      
+      if (response.success) {
+        console.log("[HomeScreen] Yakındaki etkinlikler:", response.data);
+        if (response.data && response.data.length > 0) {
+          setNearbyEvents(response.data);
+        } else {
+          setNearbyError('Yakınınızda etkinlik bulunamadı. Mesafeyi artırmak için yenileyin.');
+        }
+      } else {
+        setNearbyError(response.message || 'Yakındaki etkinlikler yüklenemedi.');
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Yakındaki etkinlikleri getirirken hata:', error);
+      setNearbyError('Yakındaki etkinlikler yüklenemedi: ' + error.message);
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
+  // Yenileme işlemini güncelle
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     // Sayfa 1'e dön ve verileri yenile
@@ -227,13 +324,24 @@ const HomeScreen = ({ navigation }) => {
       page: 1
     });
     
-    Promise.all([
-      fetchEvents(1, pagination.limit, selectedCategory),
-      isLoggedIn ? fetchRecommendedEvents() : Promise.resolve()
-    ]).finally(() => {
+    // Aktif tab'a göre farklı veri getir
+    const refreshPromises = [];
+    
+    if (tabValue === 0) {
+      // Ana sekme: normal etkinlikleri getir
+      refreshPromises.push(fetchEvents(1, pagination.limit, selectedCategory));
+      if (isLoggedIn) {
+        refreshPromises.push(fetchRecommendedEvents());
+      }
+    } else if (tabValue === 1) {
+      // Yakınımdaki sekmesi: konum ve yakındaki etkinlikleri yenile
+      refreshPromises.push(getUserLocationAndFetchNearbyEvents());
+    }
+    
+    Promise.all(refreshPromises).finally(() => {
       setRefreshing(false);
     });
-  }, [isLoggedIn, selectedCategory, pagination.limit]);
+  }, [isLoggedIn, selectedCategory, pagination.limit, tabValue]);
 
   // Daha fazla etkinlik yükle
   const loadMoreEvents = () => {
@@ -275,6 +383,11 @@ const HomeScreen = ({ navigation }) => {
   // Tab değiştirme
   const handleTabChange = (index) => {
     setTabValue(index);
+    
+    // Yakınımdaki sekmesine geçildiğinde konum bilgisini al ve yakındaki etkinlikleri getir
+    if (index === 1 && !nearbyEvents.length && !nearbyLoading) {
+      getUserLocationAndFetchNearbyEvents();
+    }
   };
   
   // Kategoriler için düz görünüm oluşturma
@@ -444,6 +557,67 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
+  // Yakındaki etkinlikleri render et
+  const renderNearbyEvents = () => {
+    if (nearbyLoading && !nearbyEvents.length) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary.main} />
+          <Text style={styles.loadingText}>Yakındaki etkinlikler yükleniyor...</Text>
+        </View>
+      );
+    }
+    
+    if (nearbyError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Ionicons name="location-off" size={48} color={colors.error.main} />
+          <Text style={styles.errorText}>{nearbyError}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={getUserLocationAndFetchNearbyEvents}
+          >
+            <Text style={styles.retryButtonText}>Tekrar Dene</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    if (nearbyEvents.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="location" size={48} color={colors.grey[500]} />
+          <Text style={styles.emptyText}>
+            Yakınınızda (20 km içerisinde) etkinlik bulunamadı.
+          </Text>
+          <TouchableOpacity 
+            style={styles.createEventButton}
+            onPress={navigateToCreateEvent}
+          >
+            <Text style={styles.createEventButtonText}>Etkinlik Oluştur</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    return (
+      <FlatList
+        data={nearbyEvents}
+        renderItem={renderEventItem}
+        keyExtractor={(item) => item._id}
+        contentContainerStyle={styles.eventsList}
+        ListHeaderComponent={
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={20} color={colors.primary.main} />
+            <Text style={styles.infoText}>
+              Konumunuza 20 km mesafe içerisindeki etkinlikler listeleniyor.
+            </Text>
+          </View>
+        }
+      />
+    );
+  };
+
   // Ana ekran içeriklerini header'a render et
   const renderHeader = () => {
     return (
@@ -498,106 +672,42 @@ const HomeScreen = ({ navigation }) => {
               : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
           </Text>
           
-          <View style={styles.divider} />
-          
-          <View style={styles.recommendedEventsContainer}>
-            {renderRecommendedEvents()}
+          {renderRecommendedEvents()}
+        </View>
+
+        {/* Popüler Etkinlikler */}
+        {popularEvents.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <Ionicons name="star" size={20} color="#FFB300" />
+                <Text style={styles.sectionTitle}>Popüler Etkinlikler</Text>
+              </View>
+            </View>
             
-            {recommendedEvents.length > 0 && (
-              <TouchableOpacity 
-                style={styles.viewAllButton}
-                onPress={() => setSelectedCategory('Tümü')}
-              >
-                <Text style={styles.viewAllButtonText}>Tüm Etkinlikleri Görüntüle</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.sectionSubtitle}>En çok katılımcı olan etkinlikler</Text>
+            
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recommendedEventsList}
+            >
+              {popularEvents.map((item) => (
+                <View key={item._id} style={styles.recommendedEventCardContainer}>
+                  <EventCard event={item} />
+                </View>
+              ))}
+            </ScrollView>
           </View>
-        </View>
+        )}
 
-        {/* Tabs */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, tabValue === 0 && styles.activeTab]}
-            onPress={() => handleTabChange(0)}
-          >
-            <Ionicons 
-              name="calendar" 
-              size={20} 
-              color={tabValue === 0 ? colors.primary.main : '#777'} 
-            />
-            <Text 
-              style={[styles.tabText, tabValue === 0 && styles.activeTabText]}
-            >
-              Etkinlikler
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, tabValue === 1 && styles.activeTab]}
-            onPress={() => handleTabChange(1)}
-          >
-            <Ionicons 
-              name="location" 
-              size={20} 
-              color={tabValue === 1 ? colors.primary.main : '#777'} 
-            />
-            <Text 
-              style={[styles.tabText, tabValue === 1 && styles.activeTabText]}
-            >
-              Yakınımdaki
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, tabValue === 2 && styles.activeTab]}
-            onPress={() => handleTabChange(2)}
-          >
-            <Ionicons 
-              name="people" 
-              size={20} 
-              color={tabValue === 2 ? colors.primary.main : '#777'} 
-            />
-            <Text 
-              style={[styles.tabText, tabValue === 2 && styles.activeTabText]}
-            >
-              Arkadaşlarım
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Etkinlikler Başlığı */}
-        <View style={styles.eventsHeader}>
-          <Text style={styles.eventsTitle}>
-            {selectedCategory === 'Tümü' ? 'Tüm Etkinlikler' : `${selectedCategory} Etkinlikleri`}
-          </Text>
-          {!loading && (
-            <Text style={styles.eventCount}>
-              {pagination.total} etkinlik bulundu
-            </Text>
-          )}
-        </View>
-
-        {/* İlgi Alanları */}
+        {/* Tüm Etkinlikler Başlığı */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="bookmark" size={20} color={colors.primary.main} />
-              <Text style={styles.sectionTitle}>İlgi Alanlarınız</Text>
+              <Ionicons name="calendar" size={20} color={colors.primary.main} />
+              <Text style={styles.sectionTitle}>Tüm Etkinlikler</Text>
             </View>
-          </View>
-          
-          <View style={styles.interestsContainer}>
-            {userInterests.map(interest => (
-              <TouchableOpacity 
-                key={interest} 
-                style={styles.interestTag}
-              >
-                <Text style={styles.interestTagText}>{interest}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.addInterestButton}>
-              <Text style={styles.addInterestText}>+ Düzenle</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </>
@@ -712,51 +822,145 @@ const HomeScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar backgroundColor="#4A56E2" barStyle="light-content" />
-      {loading && events.length === 0 ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.appTitle}>SosyalEtkinlik</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+            <Ionicons name="search" size={24} color={colors.primary.main} />
+          </TouchableOpacity>
         </View>
-      ) : error ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        
+        {/* Tab Bar */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 0 && styles.activeTab]} 
+            onPress={() => handleTabChange(0)}
+          >
+            <Ionicons 
+              name={tabValue === 0 ? "calendar" : "calendar-outline"} 
+              size={22} 
+              color={tabValue === 0 ? colors.primary.main : colors.text.secondary} 
+            />
+            <Text style={[styles.tabText, tabValue === 0 && styles.activeTabText]}>
+              Etkinlikler
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 1 && styles.activeTab]} 
+            onPress={() => handleTabChange(1)}
+          >
+            <Ionicons 
+              name={tabValue === 1 ? "location" : "location-outline"} 
+              size={22} 
+              color={tabValue === 1 ? colors.primary.main : colors.text.secondary} 
+            />
+            <Text style={[styles.tabText, tabValue === 1 && styles.activeTabText]}>
+              Yakınımdaki
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, tabValue === 2 && styles.activeTab]} 
+            onPress={() => handleTabChange(2)}
+          >
+            <Ionicons 
+              name={tabValue === 2 ? "people" : "people-outline"} 
+              size={22} 
+              color={tabValue === 2 ? colors.primary.main : colors.text.secondary} 
+            />
+            <Text style={[styles.tabText, tabValue === 2 && styles.activeTabText]}>
+              Arkadaşlarım
+            </Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <View style={{ flex: 1 }}>
-          <FlatList
-            ref={flatListRef}
-            data={getFilteredEvents()}
-            keyExtractor={(item) => item._id.toString()}
-            renderItem={renderEventItem}
-            contentContainerStyle={styles.eventsGrid}
-            showsVerticalScrollIndicator={false}
-            ListHeaderComponent={renderHeader}
-            ListFooterComponent={renderFooter}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Bu kategoride şu anda etkinlik bulunmuyor.</Text>
+        
+        {/* Tab içerikleri */}
+        {tabValue === 0 ? (
+          // Ana ekran
+          <>
+            {loading && !events.length ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary.main} />
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
                 <TouchableOpacity 
-                  style={styles.createEventButtonSmall}
-                  onPress={navigateToCreateEvent}
+                  style={styles.retryButton}
+                  onPress={() => fetchEvents(1, pagination.limit, selectedCategory)}
                 >
-                  <Text style={styles.createEventButtonSmallText}>Etkinlik Oluştur</Text>
+                  <Text style={styles.retryButtonText}>Tekrar Dene</Text>
                 </TouchableOpacity>
               </View>
+            ) : (
+              <FlatList
+                data={getFilteredEvents()}
+                renderItem={renderEventItem}
+                keyExtractor={(item) => item._id}
+                contentContainerStyle={styles.eventsList}
+                onEndReached={loadMoreEvents}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={renderFooter}
+                ListHeaderComponent={renderHeader}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={[colors.primary.main]}
+                  />
+                }
+                ListEmptyComponent={
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>
+                      {selectedCategory === 'Tümü' 
+                        ? 'Henüz etkinlik bulunamadı'
+                        : `${selectedCategory} kategorisinde etkinlik bulunamadı`}
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+            
+            {/* Sayfalama */}
+            {!loading && !error && events.length > 0 && pagination.pages > 1 && (
+              <Pagination />
+            )}
+          </>
+        ) : tabValue === 1 ? (
+          // Yakınımdaki ekranı
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary.main]}
+              />
             }
-          />
-          <Pagination />
-        </View>
-      )}
-      
-      {/* Etkinlik Oluşturma Butonu - FAB */}
-      <TouchableOpacity 
-        style={styles.fab}
-        onPress={navigateToCreateEvent}
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-      </TouchableOpacity>
+          >
+            {renderNearbyEvents()}
+          </ScrollView>
+        ) : (
+          // Arkadaşlarım ekranı (henüz uygulanmadı)
+          <View style={styles.comingSoonContainer}>
+            <Ionicons name="people" size={64} color={colors.grey[400]} />
+            <Text style={styles.comingSoonTitle}>Yakında Geliyor</Text>
+            <Text style={styles.comingSoonText}>
+              Arkadaş listeniz ve arkadaşlarınızın etkinlikleri bu bölümde gösterilecek.
+            </Text>
+          </View>
+        )}
+        
+        {/* Create Event Button */}
+        <TouchableOpacity 
+          style={styles.fab}
+          onPress={navigateToCreateEvent}
+        >
+          <Ionicons name="add" size={26} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 };
@@ -768,6 +972,127 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  appTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey[300],
+    backgroundColor: '#fff'
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary.main
+  },
+  tabText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginLeft: 4
+  },
+  activeTabText: {
+    color: colors.primary.main,
+    fontWeight: '500'
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: colors.text.secondary
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  errorText: {
+    marginTop: 10,
+    marginBottom: 20,
+    fontSize: 16,
+    color: colors.error.main,
+    textAlign: 'center'
+  },
+  retryButton: {
+    backgroundColor: colors.primary.main,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '500'
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 50
+  },
+  emptyText: {
+    fontSize: 16,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 20
+  },
+  infoCard: {
+    backgroundColor: colors.background.paper,
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary.light
+  },
+  infoText: {
+    fontSize: 14,
+    color: colors.text.primary,
+    marginLeft: 8,
+    flex: 1
+  },
+  comingSoonContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  comingSoonTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    marginTop: 16,
+    marginBottom: 8
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: colors.text.secondary,
+    textAlign: 'center'
+  },
+  scrollContent: {
+    flexGrow: 1
   },
   heroSection: {
     padding: 24,
@@ -861,17 +1186,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#eee',
     marginVertical: 12,
   },
-  infoCard: {
-    backgroundColor: '#e3f2fd',
-    padding: 16,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  infoText: {
-    color: '#2196F3',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
   loginButtonSmall: {
     backgroundColor: colors.primary.main,
     paddingVertical: 8,
@@ -883,12 +1197,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
-  },
-  loadingContainer: {
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
   },
   recommendedEventsContainer: {
     marginTop: 8,
@@ -951,154 +1259,9 @@ const styles = StyleSheet.create({
   selectedCategoryText: {
     color: '#fff',
   },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-    overflow: 'hidden',
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary.main,
-  },
-  tabText: {
-    marginLeft: 4,
-    color: '#777',
-    fontWeight: '500',
-  },
-  activeTabText: {
-    color: colors.primary.main,
-  },
-  eventsHeader: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-  },
-  eventsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  eventCount: {
-    color: '#777',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  eventsGrid: {
+  eventsList: {
     paddingHorizontal: 16,
     paddingBottom: 16,
-  },
-  eventCardContainer: {
-    marginBottom: 16,
-  },
-  errorContainer: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: '#ffebee',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#d32f2f',
-    textAlign: 'center',
-  },
-  emptyContainer: {
-    margin: 16,
-    padding: 24,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  emptyText: {
-    color: '#777',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  createEventButtonSmall: {
-    backgroundColor: colors.primary.main,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
-  },
-  createEventButtonSmallText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  interestsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  interestTag: {
-    backgroundColor: '#f0f0f0',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  interestTagText: {
-    color: '#555',
-    fontSize: 14,
-  },
-  addInterestButton: {
-    borderWidth: 1,
-    borderColor: colors.primary.main,
-    borderStyle: 'dashed',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-  },
-  addInterestText: {
-    color: colors.primary.main,
-    fontSize: 14,
-  },
-  footerLoader: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  footerText: {
-    marginLeft: 8,
-    color: '#666',
-    fontSize: 14,
-  },
-  fab: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    right: 20,
-    bottom: 20,
-    backgroundColor: colors.primary.main,
-    borderRadius: 28,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    zIndex: 999,
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -1134,6 +1297,34 @@ const styles = StyleSheet.create({
   paginationButtonTextActive: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  footerText: {
+    marginLeft: 8,
+    color: '#666',
+    fontSize: 14,
+  },
+  fab: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    right: 20,
+    bottom: 20,
+    backgroundColor: colors.primary.main,
+    borderRadius: 28,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    zIndex: 999,
   },
 });
 

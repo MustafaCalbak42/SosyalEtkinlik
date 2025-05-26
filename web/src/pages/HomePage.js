@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Container, Grid, Typography, Paper, Button, Tab, Tabs, InputBase, IconButton, CircularProgress, Pagination, Divider, Alert } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { Search as SearchIcon, LocationOn, Event, People, Category, Whatshot } from '@mui/icons-material';
@@ -9,7 +9,7 @@ import RecommendedUsers from '../components/Users/RecommendedUsers';
 import UpcomingEvents from '../components/Events/UpcomingEvents';
 import CreateEventForm from '../components/Events/CreateEventForm';
 import { useAuth } from '../context/AuthContext';
-import { getAllEvents, getRecommendedEvents } from '../services/eventService';
+import { getAllEvents, getRecommendedEvents, getNearbyEvents } from '../services/eventService';
 import { useNavigate } from 'react-router-dom';
 
 // Mock data for events (fallback only)
@@ -113,6 +113,16 @@ function HomePage() {
   const [recommendedEvents, setRecommendedEvents] = useState([]);
   const [loadingRecommended, setLoadingRecommended] = useState(false);
   const [errorRecommended, setErrorRecommended] = useState('');
+  
+  // Yakınımdaki etkinlikler için state'ler
+  const [nearbyEvents, setNearbyEvents] = useState([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
+  const [errorNearby, setErrorNearby] = useState('');
+  const [userCoordinates, setUserCoordinates] = useState(null);
+  const [showDistanceInfo, setShowDistanceInfo] = useState(false);
+
+  // Konum izleme referansı
+  const watchIdRef = useRef(null);
 
   useEffect(() => {
     fetchEvents();
@@ -187,6 +197,191 @@ function HomePage() {
     } finally {
       setLoadingRecommended(false);
     }
+  };
+
+  // Yakınımdaki sekmesine tıklandığında kullanıcının konumunu al
+  useEffect(() => {
+    if (tabValue === 1) { // Yakınımdaki sekmesi index 1'de
+      getUserLocation();
+    } else if (watchIdRef.current) {
+      // Başka bir sekmeye geçildiğinde konum izlemeyi durdur
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    
+    // Component unmount olduğunda veya tab değiştiğinde konum izlemeyi temizle
+    return () => {
+      if (watchIdRef.current) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [tabValue]);
+
+  // Kullanıcının konum bilgisini al
+  const getUserLocation = () => {
+    setLoadingNearby(true);
+    setErrorNearby('');
+    
+    if (navigator.geolocation) {
+      // Permissions API kontrolü
+      if (navigator.permissions && navigator.permissions.query) {
+        // Önce konum izni kontrolü
+        navigator.permissions.query({name: 'geolocation'}).then(permissionStatus => {
+          console.log("[HomePage] Konum izni durumu:", permissionStatus.state);
+          
+          if (permissionStatus.state === 'denied') {
+            setErrorNearby('Konum erişimine izin verilmedi. Lütfen tarayıcı ayarlarınızdan konum iznini etkinleştirin.');
+            setLoadingNearby(false);
+            return;
+          }
+          
+          watchPositionWithTimeout();
+        }).catch(error => {
+          console.error("[HomePage] Konum izni kontrolü sırasında hata:", error);
+          // Permissions API hatası durumunda doğrudan konum almayı dene
+          watchPositionWithTimeout();
+        });
+      } else {
+        // Permissions API desteklenmiyorsa doğrudan konum al
+        console.log("[HomePage] Permissions API desteklenmiyor, doğrudan konum alınıyor");
+        watchPositionWithTimeout();
+      }
+    } else {
+      setErrorNearby('Tarayıcınız konum hizmetlerini desteklemiyor. Lütfen başka bir tarayıcı kullanın.');
+      setLoadingNearby(false);
+    }
+  };
+
+  // Zamanaşımı ile konum takibi
+  const watchPositionWithTimeout = () => {
+    // İlk konum bilgisi alınmadıysa 15 saniye sonra timeout
+    const locationTimeout = setTimeout(() => {
+      setErrorNearby('Konum alınamadı. Lütfen tekrar deneyin veya manuel olarak bir konum girin.');
+      setLoadingNearby(false);
+    }, 15000);
+    
+    // Konumu sürekli izle
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        // İlk konum alındığında timeout'u temizle
+        clearTimeout(locationTimeout);
+        
+        const { latitude, longitude } = position.coords;
+        console.log("[HomePage] Konum güncellendi:", latitude, longitude);
+        
+        // Konum değiştiği için state'i güncelle
+        setUserCoordinates([latitude, longitude]);
+        
+        // Eğer ilk defa konum alınıyorsa veya konum önemli ölçüde değiştiyse etkinlikleri yeniden yükle
+        if (!userCoordinates || 
+            Math.abs(userCoordinates[0] - latitude) > 0.01 || 
+            Math.abs(userCoordinates[1] - longitude) > 0.01) {
+          // Yükleme durumunu güncelle ve kullanıcıya bilgi ver
+          setLoadingNearby(true);
+          // Konum alındıktan sonra yakındaki etkinlikleri getir
+          fetchNearbyEvents([latitude, longitude]);
+        }
+      },
+      (error) => {
+        clearTimeout(locationTimeout);
+        console.error("[HomePage] Konum alınamadı:", error);
+        
+        let errorMessage = 'Konumunuz alınamadı.';
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Konum erişimine izin verilmedi. Lütfen tarayıcı ayarlarınızdan konum iznini etkinleştirin.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Konum bilgisi kullanılamıyor. Lütfen başka bir cihaz veya tarayıcı kullanmayı deneyin.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Konum alınırken zaman aşımı oluştu. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin.';
+            break;
+          default:
+            errorMessage = 'Konumunuz alınamadı. Lütfen tekrar deneyin.';
+        }
+        
+        setErrorNearby(errorMessage);
+        setLoadingNearby(false);
+      },
+      { 
+        enableHighAccuracy: true, // Daha hassas konum
+        timeout: 15000, // 15 saniye timeout
+        maximumAge: 30000 // En fazla 30 saniyelik önbelleğe alınmış konum
+      }
+    );
+    
+    // watchId'yi ref'e kaydet
+    watchIdRef.current = watchId;
+  };
+
+  // Yakındaki etkinlikleri getir
+  const fetchNearbyEvents = async (coords) => {
+    if (!coords) {
+      setErrorNearby('Konum bilgisi gerekli. Lütfen konum izni verin.');
+      setLoadingNearby(false);
+      return;
+    }
+    
+    setLoadingNearby(true);
+    setErrorNearby('');
+    setShowDistanceInfo(true);
+    
+    try {
+      // Koordinatları ayırarak lat ve lng parametrelerini hazırla
+      const [latitude, longitude] = coords;
+      
+      // 20 km içindeki etkinlikleri getir
+      const response = await getNearbyEvents(coords, 20, 1, itemsPerPage * 3);
+      
+      if (response.success) {
+        console.log("[HomePage] Yakındaki etkinlikler:", response.data);
+        if (response.data && response.data.length > 0) {
+          setNearbyEvents(response.data);
+          
+          if (response.pagination) {
+            setPagination(response.pagination);
+          }
+          
+          // API'den gelen mesajı göster (örn. demo veri bilgisi)
+          if (response.message) {
+            console.log("[HomePage] API mesajı:", response.message);
+          }
+        } else {
+          setNearbyEvents([]);
+          setErrorNearby('Yakınınızda (20 km içinde) etkinlik bulunamadı. Daha farklı bir konumda arama yapmak için bölge değiştirin.');
+        }
+      } else {
+        setErrorNearby(response.message || 'Yakındaki etkinlikler yüklenemedi.');
+        setNearbyEvents([]);
+      }
+    } catch (error) {
+      console.error("[HomePage] Yakındaki etkinlikler yüklenirken hata:", error);
+      setErrorNearby('Yakındaki etkinlikler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
+      setNearbyEvents([]);
+    } finally {
+      setLoadingNearby(false);
+    }
+  };
+
+  // İki konum arasındaki mesafeyi hesapla (km cinsinden)
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+    
+    const R = 6371; // Dünya yarıçapı (km)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Kilometre cinsinden mesafe
+    
+    return distance;
   };
 
   const handleTabChange = (event, newValue) => {
@@ -638,6 +833,227 @@ function HomePage() {
     );
   };
 
+  // Şu anki sekmeye göre etkinlikleri render et
+  const renderEventsByTab = () => {
+    switch (tabValue) {
+      case 0: // Etkinlikler sekmesi
+        return renderAllEvents();
+      case 1: // Yakınımdaki sekmesi
+        return renderNearbyEvents();
+      case 2: // Arkadaşlarım sekmesi
+        return renderFriendsEvents();
+      default:
+        return renderAllEvents();
+    }
+  };
+
+  // Tüm etkinlikleri render et
+  const renderAllEvents = () => {
+    if (loading) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+    
+    if (error) {
+      return (
+        <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
+          {error}
+        </Paper>
+      );
+    }
+    
+    if (filteredEvents.length === 0) {
+      return (
+        <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
+          <Typography>
+            Bu kategoride şu anda etkinlik bulunmuyor.
+          </Typography>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            sx={{ mt: 2 }}
+            onClick={handleCreateEventOpen}
+          >
+            Etkinlik Oluştur
+          </Button>
+        </Paper>
+      );
+    }
+    
+    return (
+      <>
+        <Grid container spacing={3}>
+          {filteredEvents.map(event => (
+            <Grid item xs={12} sm={6} key={getEventKey(event)}>
+              <EventCard 
+                event={{
+                  ...event,
+                  title: event.title,
+                  description: event.description,
+                  image: getEventImage(event),
+                  date: event.startDate || event.date,
+                  location: formatEventLocation(event),
+                  ...getAttendeeInfo(event),
+                  category: getEventCategory(event)
+                }} 
+              />
+            </Grid>
+          ))}
+        </Grid>
+        
+        {/* Sayfalandırma */}
+        {pagination.pages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+            <Pagination 
+              count={pagination.pages} 
+              page={currentPage}
+              onChange={handlePageChange}
+              color="primary"
+              size="large"
+              showFirstButton
+              showLastButton
+            />
+          </Box>
+        )}
+      </>
+    );
+  };
+
+  // Yakınımdaki etkinlikleri render et
+  const renderNearbyEvents = () => {
+    if (loadingNearby && !nearbyEvents.length) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+    
+    if (errorNearby) {
+      return (
+        <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
+          {errorNearby}
+          <Button 
+            variant="contained" 
+            color="primary" 
+            sx={{ mt: 2, ml: 2 }}
+            onClick={getUserLocation}
+          >
+            Tekrar Dene
+          </Button>
+        </Paper>
+      );
+    }
+    
+    if (nearbyEvents.length === 0) {
+      return (
+        <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
+          <Typography>
+            Yakınınızda (20 km içinde) etkinlik bulunamadı.
+          </Typography>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            sx={{ mt: 2 }}
+            onClick={handleCreateEventOpen}
+          >
+            Etkinlik Oluştur
+          </Button>
+        </Paper>
+      );
+    }
+    
+    return (
+      <>
+        {showDistanceInfo && (
+          <Box sx={{ mb: 3 }}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Box>
+                <Typography variant="body2" fontWeight="medium">
+                  <LocationOn fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                  Konumunuz anlık olarak takip ediliyor. Bulunduğunuz konuma 20 km mesafedeki etkinlikler listeleniyor.
+                </Typography>
+                {loadingNearby && (
+                  <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                    <CircularProgress size={12} sx={{ mr: 1 }} />
+                    Konum güncellendiği için etkinlikler yeniden yükleniyor...
+                  </Typography>
+                )}
+              </Box>
+            </Alert>
+          </Box>
+        )}
+        
+        <Grid container spacing={3}>
+          {nearbyEvents.map(event => {
+            // API'den gelen mesafe bilgisini kontrol et
+            let distance = null;
+            
+            // Öncelikle event.distance alanını kontrol et (API'den gelmiş olabilir)
+            if (event.distance) {
+              distance = `${event.distance} km uzaklıkta`;
+            } 
+            // API'den mesafe gelmemişse, koordinatlar ile hesapla
+            else if (userCoordinates && event.location && event.location.coordinates) {
+              const eventCoords = event.location.coordinates;
+              // MongoDB formatı: [longitude, latitude]
+              const calculatedDistance = calculateDistance(
+                userCoordinates[0], userCoordinates[1], 
+                eventCoords[1], eventCoords[0]
+              );
+              
+              if (calculatedDistance !== null) {
+                distance = `${calculatedDistance.toFixed(1)} km uzaklıkta`;
+              }
+            }
+            
+            return (
+              <Grid item xs={12} sm={6} key={getEventKey(event)}>
+                <EventCard 
+                  event={{
+                    ...event,
+                    title: event.title,
+                    description: event.description,
+                    image: getEventImage(event),
+                    date: event.startDate || event.date,
+                    location: formatEventLocation(event),
+                    distance: distance,
+                    ...getAttendeeInfo(event),
+                    category: getEventCategory(event)
+                  }} 
+                />
+              </Grid>
+            );
+          })}
+        </Grid>
+      </>
+    );
+  };
+
+  // Arkadaşların etkinliklerini render et
+  const renderFriendsEvents = () => {
+    return (
+      <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
+        <Typography>
+          Arkadaşlarınızın etkinlikleri burada listelenecek.
+        </Typography>
+        {!isAuthenticated && (
+          <Button 
+            variant="contained" 
+            color="primary" 
+            sx={{ mt: 2 }}
+            onClick={() => navigate('/login')}
+          >
+            Giriş Yap
+          </Button>
+        )}
+      </Paper>
+    );
+  };
+
   return (
     <MainLayout>
       <HeroSection>
@@ -668,21 +1084,6 @@ function HomePage() {
           <SearchIcon />
         </IconButton>
       </SearchBox>
-
-      {/* Etkinlik Sekmeleri */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs 
-          value={tabValue} 
-          onChange={handleTabChange}
-          variant="scrollable"
-          scrollButtons="auto"
-        >
-          <Tab icon={<Whatshot />} iconPosition="start" label="Tüm Etkinlikler" />
-          <Tab icon={<Event />} iconPosition="start" label="Size Özel" disabled={!isAuthenticated} />
-          <Tab icon={<LocationOn />} iconPosition="start" label="Yakınımdakiler" />
-          <Tab icon={<People />} iconPosition="start" label="Arkadaşlarımın Etkinlikleri" disabled={!isAuthenticated} />
-        </Tabs>
-      </Box>
 
       {/* Size Özel Etkinlikler Bölümü */}
       <Box sx={{ mb: 5 }}>
@@ -752,115 +1153,33 @@ function HomePage() {
               </Tabs>
             </Paper>
             
-            <CategoryFilter 
-              selectedCategory={selectedCategory} 
-              onSelectCategory={(category) => {
-                setSelectedCategory(category);
-                setCurrentPage(1); // Kategori değiştiğinde ilk sayfaya dön
-              }} 
-            />
+            {/* Sadece 'Etkinlikler' sekmesinde kategori filtresini göster */}
+            {tabValue === 0 && (
+              <CategoryFilter 
+                selectedCategory={selectedCategory} 
+                onSelectCategory={(category) => {
+                  setSelectedCategory(category);
+                  setCurrentPage(1); // Kategori değiştiğinde ilk sayfaya dön
+                }} 
+              />
+            )}
             
             <Typography variant="h5" component="h2" fontWeight="bold" sx={{ mt: 3, mb: 2 }}>
-              {selectedCategory === 'Tümü' ? 'Tüm  Etkinlikler' : `${selectedCategory} Etkinlikleri`}
+              {tabValue === 0 ? (
+                selectedCategory === 'Tümü' ? 'Tüm Etkinlikler' : `${selectedCategory} Etkinlikleri`
+              ) : tabValue === 1 ? (
+                'Yakınımdaki Etkinlikler'
+              ) : (
+                'Arkadaşlarımın Etkinlikleri'
+              )}
             </Typography>
             
-            {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : error ? (
-              <Paper sx={{ p: 3, textAlign: 'center', color: 'error.main' }}>
-                {error}
-              </Paper>
-            ) : (
-              <>
-                <Grid container spacing={3}>
-                  {filteredEvents.map(event => (
-                    <Grid item xs={12} sm={6} key={getEventKey(event)}>
-                      <EventCard 
-                        event={{
-                          ...event,
-                          title: event.title,
-                          description: event.description,
-                          image: getEventImage(event),
-                          date: event.startDate || event.date,
-                          location: formatEventLocation(event),
-                          ...getAttendeeInfo(event),
-                          category: getEventCategory(event)
-                        }} 
-                      />
-                    </Grid>
-                  ))}
-                </Grid>
-                
-                {/* Sayfalandırma */}
-                {pagination.pages > 1 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <Pagination 
-                      count={pagination.pages} 
-                      page={currentPage}
-                      onChange={handlePageChange}
-                      color="primary"
-                      size="large"
-                      showFirstButton
-                      showLastButton
-                    />
-                  </Box>
-                )}
-              </>
-            )}
-            
-            {!loading && !error && filteredEvents.length === 0 && (
-              <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
-                <Typography>
-                  Bu kategoride şu anda etkinlik bulunmuyor.
-                </Typography>
-                <Button 
-                  variant="contained" 
-                  color="primary" 
-                  sx={{ mt: 2 }}
-                  onClick={handleCreateEventOpen}
-                >
-                  Etkinlik Oluştur
-                </Button>
-              </Paper>
-            )}
+            {/* Seçilen sekmeye göre içeriği render et */}
+            {renderEventsByTab()}
           </Box>
         </Grid>
         
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Category sx={{ mr: 1 }} color="primary" />
-              <Typography variant="h6" component="h3" fontWeight="bold">
-                İlgi Alanlarınız
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-              {['Müzik', 'Seyahat', 'Doğa', 'Spor', 'Yemek'].map(interest => (
-                <Button
-                  key={interest}
-                  size="small"
-                  variant="outlined"
-                  sx={{ 
-                    borderRadius: 4,
-                    px: 1.5
-                  }}
-                >
-                  {interest}
-                </Button>
-              ))}
-              <Button
-                size="small"
-                variant="text"
-                color="primary"
-                sx={{ borderRadius: 4 }}
-              >
-                + Düzenle
-              </Button>
-            </Box>
-          </Paper>
-          
           <Paper sx={{ p: 3, mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Event sx={{ mr: 1 }} color="primary" />

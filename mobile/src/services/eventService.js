@@ -365,4 +365,77 @@ export const leaveEvent = async (eventId) => {
       message: error.message || 'Etkinlikten ayrılırken bir hata oluştu'
     };
   }
+};
+
+/**
+ * Kullanıcının mevcut konumuna yakın etkinlikleri getir
+ * @param {Array} coordinates - [latitude, longitude] formatında konum koordinatları
+ * @param {number} maxDistance - Kilometre cinsinden maksimum uzaklık (varsayılan: 20km)
+ * @param {number} page - Sayfa numarası
+ * @param {number} limit - Sayfa başına öğe sayısı
+ * @returns {Promise} - API yanıtı
+ */
+export const getNearbyEvents = async (coordinates, maxDistance = 20, page = 1, limit = 10) => {
+  try {
+    console.log(`[eventService] Yakındaki etkinlikler getiriliyor - koordinatlar: [${coordinates}], maksimum mesafe: ${maxDistance}km`);
+    
+    if (!coordinates || !Array.isArray(coordinates) || coordinates.length !== 2) {
+      console.error('[eventService] Geçersiz koordinat formatı:', coordinates);
+      return {
+        success: false,
+        message: 'Konum bilgisi geçerli değil'
+      };
+    }
+    
+    const [latitude, longitude] = coordinates;
+    
+    // API isteği için parametreleri hazırla
+    const params = {
+      lat: latitude,
+      lng: longitude,
+      maxDistance,
+      page,
+      limit
+    };
+    
+    // Base URL'i al
+    const baseUrl = await getBaseUrl();
+    
+    // API isteği yap
+    const response = await axios.get(`${baseUrl}/events/nearby`, {
+      params,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log(`[eventService] Yakındaki etkinlikler API yanıtı: ${response.status}`);
+    
+    if (response.status === 200 && response.data) {
+      if (response.data.success) {
+        console.log(`[eventService] ${response.data.data?.length || 0} yakın etkinlik bulundu`);
+        return response.data;
+      } else if (Array.isArray(response.data)) {
+        // Alternatif API yanıt formatı için
+        console.log(`[eventService] ${response.data.length} yakın etkinlik bulundu`);
+        return {
+          success: true,
+          data: response.data,
+          message: `${maxDistance} km içindeki etkinlikler`
+        };
+      }
+    }
+    
+    return {
+      success: false,
+      message: response.data?.message || 'Yakındaki etkinlikler getirilemedi'
+    };
+  } catch (error) {
+    console.error('[eventService] Yakındaki etkinlikler getirilirken hata:', error);
+    return {
+      success: false,
+      message: error.message || 'Yakındaki etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
 }; 

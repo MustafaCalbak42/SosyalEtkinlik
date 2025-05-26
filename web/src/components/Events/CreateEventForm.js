@@ -17,11 +17,13 @@ import {
   FormHelperText,
   Alert,
   InputAdornment,
-  CircularProgress
+  CircularProgress,
+  Divider
 } from '@mui/material';
-import { LocationOn, People, Euro } from '@mui/icons-material';
+import { LocationOn, People, Euro, Map as MapIcon } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { getAllHobbies } from '../../services/hobbyService';
+import MapSelector from '../Map/MapSelector';
 
 const CreateEventForm = ({ open, onClose }) => {
   const { user, refreshUserData } = useAuth();
@@ -39,6 +41,7 @@ const CreateEventForm = ({ open, onClose }) => {
     hobbyId: '',
     address: '',
     city: '',
+    coordinates: null, // Haritadan seçilen koordinatlar
     startDate: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Yarın
     endDate: new Date(new Date().getTime() + 27 * 60 * 60 * 1000),   // Yarın + 3 saat
     maxParticipants: 10,
@@ -133,14 +136,18 @@ const CreateEventForm = ({ open, onClose }) => {
     
     // Tarih alanları için özel işlem
     if (name === 'startDate' || name === 'endDate') {
+      // Mevcut tarihten saati al
       const currentDate = new Date(formData[name]);
-      const newDate = new Date(value);
-      // Saat ve dakikayı koru, sadece gün, ay, yıl değişsin
-      newDate.setHours(
-        currentDate.getHours(),
-        currentDate.getMinutes(),
-        currentDate.getSeconds()
-      );
+      // Yeni seçilen tarih
+      const [year, month, day] = value.split('-').map(Number);
+      
+      // Saati koruyarak yeni bir tarih nesnesi oluştur
+      const newDate = new Date(currentDate);
+      newDate.setFullYear(year);
+      newDate.setMonth(month - 1); // JavaScript'te aylar 0-11 arasında
+      newDate.setDate(day);
+      
+      console.log(`[CreateEventForm] Tarih seçildi: ${name}, yeni değer:`, newDate);
       
       setFormData({
         ...formData,
@@ -210,6 +217,29 @@ const CreateEventForm = ({ open, onClose }) => {
     });
   };
 
+  const handleLocationSelect = (locationData) => {
+    // Haritadan seçilen konum bilgilerini formData'ya ekle
+    const addressParts = locationData.address.split(',');
+    // Adresin son kısmından şehir bilgisini çıkarmaya çalış
+    const city = addressParts.length > 1 ? addressParts[addressParts.length - 2].trim() : '';
+    
+    setFormData({
+      ...formData,
+      address: locationData.address,
+      city: city || formData.city, // Şehir bulunamazsa mevcut değeri koru
+      coordinates: locationData.coordinates
+    });
+    
+    // Konum hatasını temizle
+    if (formErrors.address || formErrors.city) {
+      setFormErrors({
+        ...formErrors,
+        address: null,
+        city: null
+      });
+    }
+  };
+
   const validateForm = () => {
     const errors = {};
     
@@ -218,6 +248,7 @@ const CreateEventForm = ({ open, onClose }) => {
     if (!formData.hobbyId) errors.hobbyId = 'Hobi kategorisi seçmelisiniz';
     if (!formData.address.trim()) errors.address = 'Etkinlik adresi zorunludur';
     if (!formData.city.trim()) errors.city = 'Şehir zorunludur';
+    if (!formData.coordinates) errors.coordinates = 'Haritadan konum seçmelisiniz';
     
     // Başlangıç tarihi kontrolü
     const now = new Date();
@@ -276,15 +307,6 @@ const CreateEventForm = ({ open, onClose }) => {
       // Tarih formatlarını düzgün ayarla
       const startDate = new Date(formData.startDate);
       const endDate = new Date(formData.endDate);
-
-      // Konum için varsayılan koordinatlar (şehir merkezleri için sonra güncellenebilir)
-      const defaultCoordinates = {
-        'İstanbul': [29.0121795, 41.0053215],
-        'Ankara': [32.8597419, 39.9333635],
-        'İzmir': [27.142826, 38.423733],
-        'Bursa': [29.0609636, 40.1885425],
-        'Antalya': [30.7133233, 36.8968908]
-      };
       
       // API'ye gönderilecek verileri hazırla
       const eventData = {
@@ -293,8 +315,8 @@ const CreateEventForm = ({ open, onClose }) => {
         hobby: formData.hobbyId,
         location: {
           type: 'Point',
-          coordinates: defaultCoordinates[formData.city] || [29.0121795, 41.0053215], // Varsayılan İstanbul
-          address: `${formData.address}, ${formData.city}`
+          coordinates: formData.coordinates ? [formData.coordinates[1], formData.coordinates[0]] : [29.0121795, 41.0053215], // MongoDB GeoJSON formatı: [longitude, latitude]
+          address: formData.address
         },
         startDate: startDate.toISOString(), // ISO string formatına çevir
         endDate: endDate.toISOString(),     // ISO string formatına çevir
@@ -332,6 +354,7 @@ const CreateEventForm = ({ open, onClose }) => {
           hobbyId: '',
           address: '',
           city: '',
+          coordinates: null,
           startDate: new Date(new Date().getTime() + 24 * 60 * 60 * 1000),
           endDate: new Date(new Date().getTime() + 27 * 60 * 60 * 1000),
           maxParticipants: 10,
@@ -467,25 +490,22 @@ const CreateEventForm = ({ open, onClose }) => {
                 </FormControl>
               </Grid>
               
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  name="city"
-                  label="Şehir"
-                  fullWidth
-                  required
-                  value={formData.city}
-                  onChange={handleInputChange}
-                  error={!!formErrors.city}
-                  helperText={formErrors.city}
-                  disabled={loading || success}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LocationOn />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
+              <Grid item xs={12}>
+                <Typography variant="subtitle1" gutterBottom sx={{ mt: 2, fontWeight: 'bold' }}>
+                  <MapIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  Etkinlik Konumu
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Etkinlik konumunu harita üzerinde mavi işaretçi ile seçin. Bu işaretçi etkinlik konumunu belirleyecektir.
+                </Typography>
+                <MapSelector onLocationSelect={handleLocationSelect} />
+                {formErrors.coordinates && (
+                  <FormHelperText error>{formErrors.coordinates}</FormHelperText>
+                )}
+              </Grid>
+              
+              <Grid item xs={12} sx={{ mt: 2 }}>
+                <Divider />
               </Grid>
               
               <Grid item xs={12}>
@@ -497,7 +517,28 @@ const CreateEventForm = ({ open, onClose }) => {
                   value={formData.address}
                   onChange={handleInputChange}
                   error={!!formErrors.address}
-                  helperText={formErrors.address}
+                  helperText={formErrors.address || 'Haritadan konum seçtiğinizde otomatik doldurulur'}
+                  disabled={loading || success}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LocationOn />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  name="city"
+                  label="Şehir"
+                  fullWidth
+                  required
+                  value={formData.city}
+                  onChange={handleInputChange}
+                  error={!!formErrors.city}
+                  helperText={formErrors.city || 'Haritadan konum seçtiğinizde otomatik doldurulur'}
                   disabled={loading || success}
                 />
               </Grid>
@@ -643,8 +684,14 @@ const CreateEventForm = ({ open, onClose }) => {
                     const timeValue = e.target.value;
                     const date = new Date(formData.startDate);
                     const [hours, minutes] = timeValue.split(':');
-                    date.setHours(hours, minutes);
-                    handleDateChange('startDate', date);
+                    
+                    // Mevcut tarihi koruyarak sadece saati güncelle
+                    const newDate = new Date(date);
+                    newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                    
+                    console.log(`[CreateEventForm] Başlangıç saati güncellendi:`, newDate);
+                    
+                    handleDateChange('startDate', newDate);
                   }}
                   disabled={loading || success}
                   InputLabelProps={{
@@ -683,8 +730,14 @@ const CreateEventForm = ({ open, onClose }) => {
                     const timeValue = e.target.value;
                     const date = new Date(formData.endDate);
                     const [hours, minutes] = timeValue.split(':');
-                    date.setHours(hours, minutes);
-                    handleDateChange('endDate', date);
+                    
+                    // Mevcut tarihi koruyarak sadece saati güncelle
+                    const newDate = new Date(date);
+                    newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                    
+                    console.log(`[CreateEventForm] Bitiş saati güncellendi:`, newDate);
+                    
+                    handleDateChange('endDate', newDate);
                   }}
                   disabled={loading || success}
                   InputLabelProps={{
@@ -803,25 +856,22 @@ const CreateEventForm = ({ open, onClose }) => {
               </FormControl>
             </Grid>
             
-            <Grid item xs={12} sm={6}>
-              <TextField
-                name="city"
-                label="Şehir"
-                fullWidth
-                required
-                value={formData.city}
-                onChange={handleInputChange}
-                error={!!formErrors.city}
-                helperText={formErrors.city}
-                disabled={loading || success}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <LocationOn />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ mt: 2, fontWeight: 'bold' }}>
+                <MapIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Etkinlik Konumu
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Etkinlik konumunu harita üzerinde mavi işaretçi ile seçin. Bu işaretçi etkinlik konumunu belirleyecektir.
+              </Typography>
+              <MapSelector onLocationSelect={handleLocationSelect} />
+              {formErrors.coordinates && (
+                <FormHelperText error>{formErrors.coordinates}</FormHelperText>
+              )}
+            </Grid>
+            
+            <Grid item xs={12} sx={{ mt: 2 }}>
+              <Divider />
             </Grid>
             
             <Grid item xs={12}>
@@ -833,7 +883,28 @@ const CreateEventForm = ({ open, onClose }) => {
                 value={formData.address}
                 onChange={handleInputChange}
                 error={!!formErrors.address}
-                helperText={formErrors.address}
+                helperText={formErrors.address || 'Haritadan konum seçtiğinizde otomatik doldurulur'}
+                disabled={loading || success}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LocationOn />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField
+                name="city"
+                label="Şehir"
+                fullWidth
+                required
+                value={formData.city}
+                onChange={handleInputChange}
+                error={!!formErrors.city}
+                helperText={formErrors.city || 'Haritadan konum seçtiğinizde otomatik doldurulur'}
                 disabled={loading || success}
               />
             </Grid>
@@ -979,8 +1050,14 @@ const CreateEventForm = ({ open, onClose }) => {
                   const timeValue = e.target.value;
                   const date = new Date(formData.startDate);
                   const [hours, minutes] = timeValue.split(':');
-                  date.setHours(hours, minutes);
-                  handleDateChange('startDate', date);
+                  
+                  // Mevcut tarihi koruyarak sadece saati güncelle
+                  const newDate = new Date(date);
+                  newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                  
+                  console.log(`[CreateEventForm] Başlangıç saati güncellendi:`, newDate);
+                  
+                  handleDateChange('startDate', newDate);
                 }}
                 disabled={loading || success}
                 InputLabelProps={{
@@ -1019,8 +1096,14 @@ const CreateEventForm = ({ open, onClose }) => {
                   const timeValue = e.target.value;
                   const date = new Date(formData.endDate);
                   const [hours, minutes] = timeValue.split(':');
-                  date.setHours(hours, minutes);
-                  handleDateChange('endDate', date);
+                  
+                  // Mevcut tarihi koruyarak sadece saati güncelle
+                  const newDate = new Date(date);
+                  newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                  
+                  console.log(`[CreateEventForm] Bitiş saati güncellendi:`, newDate);
+                  
+                  handleDateChange('endDate', newDate);
                 }}
                 disabled={loading || success}
                 InputLabelProps={{

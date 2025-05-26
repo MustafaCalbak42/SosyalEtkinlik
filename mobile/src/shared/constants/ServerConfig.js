@@ -1,7 +1,7 @@
 /**
  * Sunucu Yapılandırması
  * Bu dosya otomatik olarak oluşturulmuştur
- * Oluşturulma tarihi: 26.05.2025 16:15:08
+ * Oluşturulma tarihi: 26.05.2025 20:09:03
  */
 
 export const SERVER_CONFIG = {

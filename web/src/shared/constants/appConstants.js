@@ -116,4 +116,21 @@ export const API_ERROR_CODES = {
   NOT_FOUND: 404,
   VALIDATION_ERROR: 422,
   INTERNAL_SERVER_ERROR: 500
+};
+
+// Etkinlik için varsayılan görsel ayarları
+export const EVENT_IMAGES = {
+  DEFAULT: '/images/events/default-event.jpg',
+  CATEGORY: {
+    'Spor': '/images/events/sport-event.jpg',
+    'Sanat': '/images/events/art-event.jpg',
+    'Müzik': '/images/events/music-event.jpg',
+    'Dans': '/images/events/dance-event.jpg',
+    'Yemek': '/images/events/food-event.jpg',
+    'Seyahat': '/images/events/travel-event.jpg',
+    'Eğitim': '/images/events/education-event.jpg',
+    'Teknoloji': '/images/events/tech-event.jpg',
+    'Doğa': '/images/events/nature-event.jpg',
+    'Diğer': '/images/events/other-event.jpg'
+  }
 }; 
