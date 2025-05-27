@@ -109,7 +109,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
     >
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.iconContainer}>
-          <MaterialIcons name={success ? "check-circle" : "lock-reset"} size={80} color={success ? "#4caf50" : "#1976d2"} />
+          <MaterialIcons name={success ? "check-circle" : "lock-outline"} size={80} color={success ? "#4caf50" : "#1976d2"} />
           <Text style={styles.title}>{success ? 'Şifre Değiştirildi' : 'Yeni Şifre Belirle'}</Text>
           
           {!success && (

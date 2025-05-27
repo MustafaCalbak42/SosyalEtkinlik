@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Box, Container, Tab, Tabs, Typography, Avatar, TextField, Button, Paper, Badge, List, ListItem, ListItemAvatar, ListItemText, Divider, IconButton, CircularProgress, Chip, Alert, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
-import { Send as SendIcon, ArrowBack as ArrowBackIcon, Group as GroupIcon, Event as EventIcon, Refresh as RefreshIcon, CalendarMonth, Info as InfoIcon, EmojiEmotions, AttachFile, Photo, Close, Person, PersonSearch } from '@mui/icons-material';
+import { Send as SendIcon, ArrowBack as ArrowBackIcon, Group as GroupIcon, Event as EventIcon, Refresh as RefreshIcon, CalendarMonth, Info as InfoIcon, Close, Person, PersonSearch } from '@mui/icons-material';
 import io from 'socket.io-client';
 import axios from 'axios';
 import MainLayout from '../components/MainLayout';
@@ -1691,57 +1691,6 @@ const MessagesPage = () => {
                   backgroundColor: '#F5F5F5',
                   alignItems: 'center'
                 }}>
-                  {/* Dosya ve Emoji Butonları */}
-                  <Box sx={{ display: 'flex', mr: 1 }}>
-                    <IconButton 
-                      size="medium" 
-                      color="primary"
-                      sx={{ color: THEME_COLORS.darkGray }}
-                      title="Emoji Ekle"
-                    >
-                      <EmojiEmotions />
-                    </IconButton>
-                    
-                    <IconButton 
-                      size="medium" 
-                      color="primary" 
-                      component="label"
-                      sx={{ color: THEME_COLORS.darkGray }}
-                      title="Dosya Ekle"
-                    >
-                      <AttachFile />
-                      <input 
-                        type="file" 
-                        hidden
-                        onChange={(e) => {
-                          // Dosya seçildiğinde
-                          console.log('Dosya seçildi:', e.target.files[0]);
-                          // Burada dosya yükleme işlemleri yapılabilir
-                        }}
-                      />
-                    </IconButton>
-                    
-                    <IconButton 
-                      size="medium" 
-                      color="primary"
-                      component="label"
-                      sx={{ color: THEME_COLORS.darkGray }}
-                      title="Fotoğraf Ekle"
-                    >
-                      <Photo />
-                      <input 
-                        type="file" 
-                        hidden
-                        accept="image/*"
-                        onChange={(e) => {
-                          // Fotoğraf seçildiğinde
-                          console.log('Fotoğraf seçildi:', e.target.files[0]);
-                          // Burada fotoğraf yükleme işlemleri yapılabilir
-                        }}
-                      />
-                    </IconButton>
-                  </Box>
-                  
                   <TextField
                     id="message-input"
                     fullWidth

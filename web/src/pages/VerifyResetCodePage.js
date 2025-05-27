@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
 import {
   Container,
   Box,
@@ -17,6 +16,7 @@ import {
 import LockResetIcon from '@mui/icons-material/LockReset';
 import KeyIcon from '@mui/icons-material/Key';
 import EmailIcon from '@mui/icons-material/Email';
+import { verifyResetCode } from '../services/userService';
 
 const VerifyResetCodePage = () => {
   const navigate = useNavigate();
@@ -47,12 +47,12 @@ const VerifyResetCodePage = () => {
     setLoading(true);
     
     try {
-      const response = await axios.post('/api/users/verify-reset-code', {
+      const response = await verifyResetCode({
         email,
         code
       });
       
-      if (response.data.success) {
+      if (response.success) {
         setSuccess(true);
         // Navigate to reset password page with token
         setTimeout(() => {
@@ -60,12 +60,12 @@ const VerifyResetCodePage = () => {
             state: { 
               email,
               verified: true,
-              verificationId: response.data.verificationId
+              verificationId: response.verificationId
             } 
           });
         }, 1000);
       } else {
-        setError(response.data.message || 'Kod doğrulaması başarısız oldu');
+        setError(response.message || 'Kod doğrulaması başarısız oldu');
       }
     } catch (err) {
       setError(

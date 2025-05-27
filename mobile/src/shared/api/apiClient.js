@@ -213,6 +213,24 @@ apiClient.interceptors.request.use(
     }
     
     try {
+      // Public endpoints that don't require authentication (don't show token warnings)
+      const publicEndpoints = [
+        '/users/login',
+        '/users/register',
+        '/users/forgot-password',
+        '/users/verify-reset-code',
+        '/users/reset-password',
+        '/users/verify-email',
+        '/users/resend-verification',
+        '/events',
+        '/health'
+      ];
+      
+      // Check if current endpoint is in the public endpoints list
+      const isPublicEndpoint = publicEndpoints.some(endpoint => 
+        config.url.includes(endpoint)
+      );
+      
       // Her istekte AsyncStorage'dan token al - global değişken yerine
       const token = await AsyncStorage.getItem('token');
       
@@ -229,13 +247,17 @@ apiClient.interceptors.request.use(
           // Log only part of token for security
           console.log(`[API Debug] Request to ${config.url} with token: ${authHeader.substring(0, 20)}...`);
         } else {
-          console.warn(`[API Debug] Invalid token for ${config.url}: token too short or empty (length: ${cleanToken ? cleanToken.length : 0})`);
+          if (!isPublicEndpoint) {
+            console.warn(`[API Debug] Invalid token for ${config.url}: token too short or empty (length: ${cleanToken ? cleanToken.length : 0})`);
+          }
           
           // Token geçersizse header'dan kaldır
           delete config.headers['Authorization'];
         }
       } else {
-        console.warn(`[API Debug] Request to ${config.url} without token!`);
+        if (!isPublicEndpoint) {
+          console.warn(`[API Debug] Request to ${config.url} without token!`);
+        }
         // Token yoksa header'dan kaldır
         delete config.headers['Authorization'];
       }
@@ -365,13 +387,10 @@ const api = {
       console.log('Login isteği gönderiliyor:', credentials.email);
       return apiClient.post('/users/login', credentials)
         .then(response => {
-          console.log('Login yanıtı alındı, başarı:', response.data?.success);
-          // Token var mı kontrol et
-          if (response.data?.success && response.data?.data?.token) {
-            console.log('Login başarılı, token alındı (ilk 10 karakter):', 
-              response.data.data.token.substring(0, 10) + '...');
+          if (response.data?.success) {
+            console.log('Login başarılı');
           } else {
-            console.warn('Login yanıtında token yok veya hata var!');
+            console.warn('Login başarısız:', response.data?.message || 'Bilinmeyen hata');
           }
           return response;
         })
