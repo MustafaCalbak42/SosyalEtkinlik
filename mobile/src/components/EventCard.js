@@ -1,19 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Image,
-  Dimensions
+  Dimensions,
+  Alert
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../shared/api/apiClient';
 
-const EventCard = ({ event }) => {
+const EventCard = ({ event, showRecommendationBadge = false, onEventUpdated }) => {
   const navigation = useNavigation();
   const auth = useAuth(); // AuthContext'i kullan
+  const [isJoining, setIsJoining] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
+  
+  // Kullanıcının bu etkinliğe katılıp katılmadığını kontrol et
+  useEffect(() => {
+    if (auth.userProfile && event.participants) {
+      const isParticipant = event.participants.some(
+        p => p.user === auth.userProfile._id || p.user._id === auth.userProfile._id
+      );
+      setHasJoined(isParticipant);
+    }
+  }, [auth.userProfile, event.participants]);
   
   // Function to get category icon
   const getCategoryIcon = (category) => {
@@ -46,7 +60,7 @@ const EventCard = ({ event }) => {
     return icons[categoryName] || 'calendar';
   };
   
-  // Etkinlik için kategori ve içeriğe göre görsel URL'si belirle
+  // Etkinlik için kategori ve içeriğe göre görsel URL'si belirle - İyileştirilmiş versiyon
   const getEventImage = (event) => {
     try {
       // Önce etkinliğin kendi görselini kontrol et
@@ -65,100 +79,102 @@ const EventCard = ({ event }) => {
       // Tüm içeriği birleştirerek daha güçlü bir arama yap
       const allContent = `${title} ${description} ${hobbyName}`;
       
-      // Kategori bazlı varsayılan görseller
+      // Kategori bazlı varsayılan görseller - Güncellenmiş ve test edilmiş URL'ler
       const categoryImages = {
-        'müzik': 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'spor': 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'sanat': 'https://images.unsplash.com/photo-1536924940846-227afb31e2a5?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'dans': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'yemek': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'seyahat': 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'teknoloji': 'https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'doğa': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'eğitim': 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'diğer': 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60'
+        'müzik': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'spor': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'sanat': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'dans': 'https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'yemek': 'https://images.unsplash.com/photo-1551782450-a2132b4ba21d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'seyahat': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'teknoloji': 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'doğa': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'eğitim': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'diğer': 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60'
       };
       
       // Kategori alt türleri için anahtar kelimeler ve görsel URL'leri
       const keywordMap = {
         // Spor alt türleri
-        'futbol': 'https://images.unsplash.com/photo-1560272564-c83b665fa177?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'soccer': 'https://images.unsplash.com/photo-1560272564-c83b665fa177?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'football': 'https://images.unsplash.com/photo-1560272564-c83b665fa177?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'basketbol': 'https://images.unsplash.com/photo-1518650868956-c1098117c4ab?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'basketball': 'https://images.unsplash.com/photo-1518650868956-c1098117c4ab?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'tenis': 'https://images.unsplash.com/photo-1587280501635-68a0e82cd5ff?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'tennis': 'https://images.unsplash.com/photo-1587280501635-68a0e82cd5ff?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'voleybol': 'https://images.unsplash.com/photo-1592656094261-c49cafc9a48f?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'volleyball': 'https://images.unsplash.com/photo-1592656094261-c49cafc9a48f?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'yüzme': 'https://images.unsplash.com/photo-1560089000-7433a4ebbd64?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'swimming': 'https://images.unsplash.com/photo-1560089000-7433a4ebbd64?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'koşu': 'https://images.unsplash.com/photo-1487956382158-bb926046304a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'running': 'https://images.unsplash.com/photo-1487956382158-bb926046304a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'yoga': 'https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'futbol': 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'soccer': 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'football': 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'basketbol': 'https://images.unsplash.com/photo-1546519638-68e109498ffc?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'basketball': 'https://images.unsplash.com/photo-1546519638-68e109498ffc?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'tenis': 'https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'tennis': 'https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'voleybol': 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'volleyball': 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'yüzme': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'swimming': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'koşu': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'running': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'yoga': 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'bisiklet': 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'cycling': 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Müzik alt türleri
-        'gitar': 'https://images.unsplash.com/photo-1510915361894-db8b60106cb1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'guitar': 'https://images.unsplash.com/photo-1510915361894-db8b60106cb1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'piyano': 'https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'piano': 'https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'konser': 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'concert': 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'rock': 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'jazz': 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'gitar': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'guitar': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'piyano': 'https://images.unsplash.com/photo-1552422535-c45813c61732?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'piano': 'https://images.unsplash.com/photo-1552422535-c45813c61732?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'konser': 'https://images.unsplash.com/photo-1493676304819-0d7a8d026dcf?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'concert': 'https://images.unsplash.com/photo-1493676304819-0d7a8d026dcf?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'rock': 'https://images.unsplash.com/photo-1493676304819-0d7a8d026dcf?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'jazz': 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Sanat alt türleri
-        'resim': 'https://images.unsplash.com/photo-1579762715118-a6f1d4b934f1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'painting': 'https://images.unsplash.com/photo-1579762715118-a6f1d4b934f1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'fotoğraf': 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'photography': 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'sergi': 'https://images.unsplash.com/photo-1563349441-5ccf8952dca2?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'exhibition': 'https://images.unsplash.com/photo-1563349441-5ccf8952dca2?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'resim': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'painting': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'fotoğraf': 'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'photography': 'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'sergi': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'exhibition': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Dans alt türleri
-        'bale': 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'ballet': 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'salsa': 'https://images.unsplash.com/photo-1504609813442-a9c278baf893?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'tango': 'https://images.unsplash.com/photo-1516666248405-9737546ccea8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'bale': 'https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'ballet': 'https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'salsa': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'tango': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Yemek alt türleri
-        'pasta': 'https://images.unsplash.com/photo-1588195538326-c5b1e9f80a1b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'kahve': 'https://images.unsplash.com/photo-1559496417-e7f25cb247f3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'coffee': 'https://images.unsplash.com/photo-1559496417-e7f25cb247f3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'pizza': 'https://images.unsplash.com/photo-1513104890138-7c749659a591?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'sushi': 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'pasta': 'https://images.unsplash.com/photo-1551782450-a2132b4ba21d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'kahve': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'coffee': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'pizza': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'sushi': 'https://images.unsplash.com/photo-1553621042-f6e147245754?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Seyahat alt türleri
-        'istanbul': 'https://images.unsplash.com/photo-1527838832700-5059252407fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'kapadokya': 'https://images.unsplash.com/photo-1570856033163-05f258ec9481?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'cappadocia': 'https://images.unsplash.com/photo-1570856033163-05f258ec9481?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'paris': 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'kamp': 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'camping': 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'istanbul': 'https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'kapadokya': 'https://images.unsplash.com/photo-1570856033163-05f258ec9481?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'cappadocia': 'https://images.unsplash.com/photo-1570856033163-05f258ec9481?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'paris': 'https://images.unsplash.com/photo-1502602898536-47ad22581b52?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'kamp': 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'camping': 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Teknoloji alt türleri
-        'yazılım': 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'software': 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'yapay zeka': 'https://images.unsplash.com/photo-1507146153580-69a1fe6d8aa1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'artificial intelligence': 'https://images.unsplash.com/photo-1507146153580-69a1fe6d8aa1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'robotik': 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'robotics': 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'yazılım': 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'software': 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'yapay zeka': 'https://images.unsplash.com/photo-1507146153580-69a1fe6d8aa1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'artificial intelligence': 'https://images.unsplash.com/photo-1507146153580-69a1fe6d8aa1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'robotik': 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'robotics': 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Doğa alt türleri
-        'dağ': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'mountain': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'deniz': 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'sea': 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'orman': 'https://images.unsplash.com/photo-1448375240586-882707db888b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'forest': 'https://images.unsplash.com/photo-1448375240586-882707db888b?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
+        'dağ': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'mountain': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'deniz': 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'sea': 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'orman': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'forest': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
         
         // Eğitim alt türleri
-        'seminer': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'seminar': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'konferans': 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'conference': 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'kitap': 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-        'book': 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60'
+        'seminer': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'seminar': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'konferans': 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'conference': 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'kitap': 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+        'book': 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60'
       };
       
       // Anahtar kelimelere göre resim seç
@@ -174,7 +190,7 @@ const EventCard = ({ event }) => {
       
     } catch (error) {
       console.error('Görsel belirlenirken hata oluştu:', error);
-      return 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60';
+      return 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60';
     }
   };
   
@@ -295,6 +311,43 @@ const EventCard = ({ event }) => {
     return 0;
   };
   
+  // Etkinliğe katılma/ayrılma işlemi
+  const handleJoinToggle = async () => {
+    if (!auth.userProfile) {
+      navigation.navigate('Login');
+      return;
+    }
+    
+    setIsJoining(true);
+    
+    try {
+      if (hasJoined) {
+        // Etkinlikten ayrıl
+        await api.events.leave(event._id);
+        setHasJoined(false);
+        console.log('[EventCard] Etkinlikten ayrıldı:', event.title);
+      } else {
+        // Etkinliğe katıl
+        await api.events.join(event._id);
+        setHasJoined(true);
+        console.log('[EventCard] Etkinliğe katıldı:', event.title);
+      }
+      
+      // Eğer callback varsa çağır (profil sayfasını yenilemek için)
+      if (onEventUpdated) {
+        onEventUpdated();
+      }
+    } catch (error) {
+      console.error('[EventCard] Katılım işlemi hatası:', error);
+      
+      // Hata mesajını göster
+      const errorMessage = error.response?.data?.message || 'Bir hata oluştu';
+      Alert.alert('Hata', errorMessage);
+    } finally {
+      setIsJoining(false);
+    }
+  };
+  
   return (
     <TouchableOpacity 
       style={styles.card}
@@ -315,6 +368,14 @@ const EventCard = ({ event }) => {
             {event.hobby?.name || event.category || event.hobbyName || 'Diğer'}
           </Text>
         </View>
+
+        {/* Recommendation Badge */}
+        {showRecommendationBadge && (
+          <View style={styles.recommendationBadge}>
+            <Icon name="star" size={12} color="#fff" />
+            <Text style={styles.recommendationText}>Size Özel</Text>
+          </View>
+        )}
       </View>
       
       {/* Event Info */}
@@ -335,6 +396,16 @@ const EventCard = ({ event }) => {
           </Text>
         </View>
         
+        {/* Distance Info - Yakınımdaki etkinlikler için */}
+        {event.distance && (
+          <View style={styles.detailItem}>
+            <Icon name="walk" size={16} color="#3f51b5" />
+            <Text style={[styles.detailText, styles.distanceText]}>
+              {typeof event.distance === 'string' ? event.distance : `${event.distance} km uzaklıkta`}
+            </Text>
+          </View>
+        )}
+        
         <View style={styles.footer}>
           <View style={styles.attendeesInfo}>
             <Icon name="account-group" size={16} color="#666" />
@@ -343,8 +414,21 @@ const EventCard = ({ event }) => {
             </Text>
           </View>
           
-          <TouchableOpacity style={styles.joinButton}>
-            <Text style={styles.joinButtonText}>Join</Text>
+          <TouchableOpacity 
+            style={[
+              styles.joinButton, 
+              hasJoined && styles.joinedButton,
+              isJoining && styles.disabledButton
+            ]}
+            onPress={handleJoinToggle}
+            disabled={isJoining}
+          >
+            <Text style={[
+              styles.joinButtonText,
+              hasJoined && styles.joinedButtonText
+            ]}>
+              {isJoining ? 'Yükleniyor...' : hasJoined ? 'Ayrıl' : 'Katıl'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -440,6 +524,36 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#3f51b5',
     fontSize: 14,
+  },
+  recommendationBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#FF7043',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recommendationText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  joinedButton: {
+    backgroundColor: '#f44336',
+  },
+  joinedButtonText: {
+    color: '#fff',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  distanceText: {
+    fontWeight: 'bold',
+    color: '#3f51b5',
   },
 });
 

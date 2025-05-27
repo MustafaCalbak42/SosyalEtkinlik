@@ -67,13 +67,17 @@ export const getPrivateConversations = async () => {
     try {
       // 1. Önce standart endpoint ile deneyelim (retry ile)
       return await withRetry(async () => {
+        console.log('[messageService] Attempting to fetch conversations from primary endpoint');
         const response = await axios.get(`${API_URL}/messages/conversations`, {
           headers: {
             'Authorization': `Bearer ${cleanToken}`,
             'Content-Type': 'application/json'
           },
-          timeout: 8000 // 8 saniye zaman aşımı ekleyelim
+          timeout: 10000 // 10 saniye zaman aşımı
         });
+        
+        console.log('[messageService] Primary endpoint response status:', response.status);
+        console.log('[messageService] Primary endpoint response data type:', typeof response.data);
         
         // Geçerli yanıt kontrolü
         if (response.data && response.data.success && Array.isArray(response.data.data)) {
@@ -92,107 +96,30 @@ export const getPrivateConversations = async () => {
         }
         else {
           console.warn('[messageService] Invalid API response format:', typeof response.data);
+          console.warn('[messageService] Response data:', JSON.stringify(response.data).substring(0, 200));
           throw new Error('Invalid response format');
         }
-      });
+      }, 1, 2000); // Sadece 1 retry, 2 saniye bekle
     } 
     catch (error) {
       console.error('[messageService] Primary endpoint error:', error.message);
       
-      // 2. Birincil endpoint başarısız olursa, alternatif endpoint'i deneyelim (retry ile)
-      try {
-        console.log('[messageService] Trying alternative endpoint...');
-        return await withRetry(async () => {
-          const altResponse = await axios.get(`${API_URL}/users/conversations`, {
-            headers: {
-              'Authorization': `Bearer ${cleanToken}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 8000
-          });
-          
-          if (altResponse.data && (altResponse.data.success || Array.isArray(altResponse.data))) {
-            const conversations = Array.isArray(altResponse.data) ? 
-              altResponse.data : (altResponse.data.data || []);
-            
-            console.log('[messageService] Alternative endpoint success:', conversations.length);
-            return {
-              success: true,
-              data: conversations
-            };
-          }
-          
-          throw new Error('Invalid alternative endpoint response');
-        });
-      } 
-      catch (altError) {
-        console.error('[messageService] Alternative endpoint also failed:', altError.message);
-        
-        // 3. Backend API'deki yeni endpoint'i deneyelim
-        try {
-          console.log('[messageService] Trying saved conversations as fallback...');
-          const savedResponse = await axios.get(`${API_URL}/saved-conversations`, {
-            headers: {
-              'Authorization': `Bearer ${cleanToken}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 5000
-          });
-          
-          if (savedResponse.data && savedResponse.data.success && Array.isArray(savedResponse.data.data)) {
-            // Kaydedilmiş konuşmaları dönüştür
-            const savedConversationsData = (savedResponse.data.data || [])
-              .filter(saved => saved && saved.targetUser)
-              .map(saved => ({
-                userId: saved.targetUser._id,
-                fullName: saved.targetUser.fullName || saved.targetUser.username || 'İsimsiz Kullanıcı',
-                username: saved.targetUser.username || 'kullanici',
-                profilePicture: saved.targetUser.profilePicture || null,
-                lastMessage: saved.lastMessage || '',
-                lastMessageDate: saved.lastMessageDate || new Date(),
-                unreadCount: 0,
-                user: saved.targetUser,
-                savedConversationId: saved._id,
-                isSaved: true
-              }));
-            
-            console.log('[messageService] Using saved conversations as fallback:', savedConversationsData.length);
-            return {
-              success: true,
-              data: savedConversationsData
-            };
-          }
-        } catch (savedError) {
-          console.error('[messageService] Saved conversations fallback failed:', savedError.message);
-        }
-      }
-      
-      // Her endpoint başarısız olursa, örnek veri döndür
-      console.log('[messageService] All endpoints failed, returning dummy data');
+      // 2. Birincil endpoint başarısız olursa, boş liste döndür (hızlı çözüm)
+      console.log('[messageService] Primary endpoint failed, returning empty list for better UX');
       return {
         success: true,
-        message: 'Konuşmalar yüklenemedi, örnek veriler gösteriliyor',
-        data: dummyData
+        data: [],
+        message: 'Konuşmalar yüklenirken sorun oluştu, lütfen tekrar deneyin'
       };
     }
   } 
   catch (generalError) {
     console.error('[messageService] General error in getPrivateConversations:', generalError);
-    // Uygulamanın çalışmaya devam etmesi için örnek liste döndür
+    // Uygulamanın çalışmaya devam etmesi için boş liste döndür
     return {
       success: true,
-      message: 'Beklenmeyen bir hata oluştu',
-      data: [
-        {
-          userId: 'sample-fallback',
-          fullName: 'Bağlantı Hatası',
-          username: 'error',
-          profilePicture: null,
-          lastMessage: 'Sunucu bağlantısında sorun oluştu. Lütfen internet bağlantınızı kontrol edin.',
-          lastMessageDate: new Date().toISOString(),
-          unreadCount: 0
-        }
-      ]
+      message: 'Konuşmalar yüklenirken hata oluştu',
+      data: []
     };
   }
 };

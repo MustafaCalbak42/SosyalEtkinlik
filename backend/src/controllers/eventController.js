@@ -753,226 +753,402 @@ const getEventsByHobby = async (req, res) => {
   }
 };
 
-// @desc    Kullanıcıya önerilen etkinlikleri getir (Hobilerine göre)
+// @desc    Kullanıcıya önerilen etkinlikleri getir (Hobi + İl bazlı akıllı filtreleme)
 // @route   GET /api/events/recommended
 // @access  Private
 const getRecommendedEvents = async (req, res) => {
   try {
     // Sayfalandırma parametrelerini al
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 4;
+    const limit = parseInt(req.query.limit) || 8;
     const skip = (page - 1) * limit;
     
-    console.log(`[eventController] Recommended events request - user: ${req.user.id}, page: ${page}, limit: ${limit}`);
+    console.log(`[eventController] Size özel etkinlikler - kullanıcı: ${req.user.username}, sayfa: ${page}, limit: ${limit}`);
     
     // Kullanıcı bilgilerini al
     const user = await User.findById(req.user.id).populate('hobbies');
     
     if (!user) {
-      console.log(`[eventController] User not found: ${req.user.id}`);
+      console.log(`[eventController] Kullanıcı bulunamadı: ${req.user.id}`);
       return res.status(404).json({
         success: false,
         message: 'Kullanıcı bulunamadı'
       });
     }
     
-    // Kullanıcının hobi ve konum bilgilerini ayrıntılı olarak logla
+    // Kullanıcının hobi ve konum bilgilerini al
     const userHobbies = user.hobbies || [];
-    console.log('[eventController] User hobbies:', userHobbies.map(h => ({
+    const userLocation = user.location;
+    
+    console.log('[eventController] Kullanıcı hobiler:', userHobbies.map(h => ({
       id: h._id, 
       name: h.name,
       category: h.category
     })));
     
-    const userLocation = user.location;
-    console.log('[eventController] User location:', JSON.stringify(userLocation));
-    
     // İl bilgisini çıkar
-    let userProvince = '';
+    let userCity = '';
     if (userLocation && userLocation.address) {
       const addressParts = userLocation.address.split(',');
-      // İl bilgisini alırken daha doğru bir yaklaşım uygulayalım
       if (addressParts.length > 0) {
-        // İlk parça il olabilir - Türkiye address formatına göre
-        userProvince = addressParts[0].trim();
-        console.log('[eventController] User province:', userProvince);
+        userCity = addressParts[0].trim();
+        console.log('[eventController] Kullanıcının ili:', userCity);
       }
     }
     
-    // İl bilgisi yoksa ve query'den city parametresi varsa onu kullan
-    if (!userProvince && req.query.city) {
-      userProvince = req.query.city.trim();
-      console.log('[eventController] Using city from query param:', userProvince);
+    // Query'den city parametresi varsa onu kullan (frontend'den gelebilir)
+    if (!userCity && req.query.city) {
+      userCity = req.query.city.trim();
+      console.log('[eventController] Query parametresinden il:', userCity);
     }
     
-    // Konum filtreleme için sorgu hazırla
-    let locationFilter = {};
+    // Kullanıcı profil durumunu analiz et
+    const hasCity = !!userCity;
+    const hasHobbies = userHobbies.length > 0;
     
-    if (userProvince) {
-      locationFilter = {
-        'location.address': { $regex: userProvince, $options: 'i' }
-      };
-      console.log('[eventController] Using location filter:', JSON.stringify(locationFilter));
-    }
+    console.log('[eventController] Profil durumu:', { hasCity, hasHobbies, city: userCity, hobbiesCount: userHobbies.length });
     
-    // Kullanıcı hobilerini kontrol et
-    if (!userHobbies || userHobbies.length === 0) {
-      console.log('[eventController] User has no hobbies, looking for location-based events only');
+    // 3 aşamalı öncelik sistemi:
+    // 1. Öncelik: İl + Hobi eşleşmesi (en yüksek öncelik)
+    // 2. Öncelik: Sadece İl eşleşmesi (hobi eşleşmesi bulunamadığında)
+    // 3. Öncelik: Sadece Hobi eşleşmesi (il dışındaki etkinlikler)
+    
+    let finalEvents = [];
+    let totalCount = 0;
+    let filterType = 'general';
+    let appliedFilters = [];
+    let responseMessage = '';
+    
+    // AŞAMA 1: İl + Hobi eşleşmesi (en yüksek öncelik)
+    if (hasCity && hasHobbies) {
+      console.log('[eventController] AŞAMA 1: İl + Hobi eşleşmesi aranıyor...');
       
-      // Hobi yoksa ve konum varsa, sadece il bazlı etkinlikleri getir
-      let provinceQuery = { status: 'active' };
+      const hobbyIds = userHobbies.map(hobby => hobby._id);
+      const hobbyCategories = [...new Set(userHobbies.map(hobby => hobby.category))];
       
-      if (userProvince) {
-        provinceQuery = {
-          ...provinceQuery,
-          ...locationFilter
-        };
-        console.log('[eventController] Filtering by location only:', JSON.stringify(provinceQuery));
-      }
-      
-      // İl bilgisine göre etkinlikleri getir
-      const events = await Event.find(provinceQuery)
-        .populate('organizer', 'username fullName profilePicture')
-        .populate('hobby', 'name category')
-        .sort({ startDate: 1 })
-        .skip(skip)
-        .limit(limit);
-      
-      const totalEvents = await Event.countDocuments(provinceQuery);
-      console.log(`[eventController] Found ${totalEvents} province-based events`);
-      
-      return res.json({
-        success: true,
-        data: events,
-        message: userProvince 
-          ? `${userProvince} ilinizdeki etkinlikler listeleniyor` 
-          : 'İl ve hobi tercihiniz olmadığı için tüm etkinlikler listeleniyor',
-        pagination: {
-          total: totalEvents,
-          page,
-          limit,
-          pages: Math.ceil(totalEvents / limit)
-        }
-      });
-    }
-    
-    // Kullanıcının hobilerinden ID'leri ve kategori bilgilerini çıkar
-    const hobbyIds = userHobbies.map(hobby => hobby._id);
-    const hobbyCategories = [...new Set(userHobbies.map(hobby => hobby.category))];
-    
-    console.log('[eventController] User hobby IDs:', hobbyIds);
-    console.log('[eventController] User hobby categories:', hobbyCategories);
-    
-    // Ana sorguyu oluştur: 
-    // 1. İl filtresini öncelikli uygula
-    // 2. Hobi ID'si veya kategori eşleşmesi
-    
-    // İl bilgisi ve hobi bilgisi var ise ilk önce ildeki etkinlikleri getir
-    if (userProvince) {
-      // Önce sadece il bazlı etkinlikleri getir
-      const query = {
+      const cityAndHobbyQuery = {
         status: 'active',
-        ...locationFilter
+        'location.address': { $regex: userCity, $options: 'i' },
+        $or: [
+          { hobby: { $in: hobbyIds } },
+          { 'hobby.category': { $in: hobbyCategories } }
+        ]
       };
       
-      console.log('[eventController] Province based query:', JSON.stringify(query));
+      console.log('[eventController] İl + Hobi sorgusu:', JSON.stringify(cityAndHobbyQuery));
       
-      // İldeki toplam etkinlik sayısını bul
-      const totalEvents = await Event.countDocuments(query);
-      console.log(`[eventController] Found ${totalEvents} events in user's province`);
-      
-      // İldeki etkinlikleri getir
-      const events = await Event.find(query)
+      const cityHobbyEvents = await Event.find(cityAndHobbyQuery)
         .populate('organizer', 'username fullName profilePicture')
         .populate('hobby', 'name category')
         .sort({ startDate: 1 })
         .skip(skip)
         .limit(limit);
       
-      console.log(`[eventController] Returning ${events.length} events for user ${user.username} in province ${userProvince}`);
+      const cityHobbyTotal = await Event.countDocuments(cityAndHobbyQuery);
       
-      // İlk birkaç etkinliğin bilgilerini göster
-      if (events.length > 0) {
-        console.log('[eventController] Sample events:', events.slice(0, Math.min(3, events.length)).map(e => ({
-          id: e._id,
-          title: e.title,
-          hobby: e.hobby?.name || 'No hobby',
-          category: e.hobby?.category || 'No category',
-          location: e.location?.address || 'No location'
-        })));
-      }
+      console.log(`[eventController] İl + Hobi eşleşmesi: ${cityHobbyTotal} etkinlik bulundu`);
       
-      // İl bazlı etkinlikler varsa onları döndür
-      if (events.length > 0) {
+      if (cityHobbyEvents.length > 0) {
+        finalEvents = cityHobbyEvents;
+        totalCount = cityHobbyTotal;
+        filterType = 'city-and-hobby';
+        appliedFilters = ['city', 'hobby'];
+        responseMessage = `${userCity} ilinizdeki hobi alanlarınıza uygun ${cityHobbyEvents.length} etkinlik bulundu`;
+        
+        console.log('[eventController] ✅ En iyi eşleşme bulundu: İl + Hobi');
+        
         return res.json({
           success: true,
-          data: events,
-          message: `${userProvince} ilinizdeki etkinlikler listeleniyor`,
+          data: finalEvents,
+          message: responseMessage,
+          filterInfo: {
+            userCity,
+            userHobbies: userHobbies.map(h => h.name),
+            appliedFilters,
+            filterType
+          },
+          userInfo: {
+            hasCity,
+            hasHobbies,
+            city: userCity,
+            hobbies: userHobbies.map(h => h.name)
+          },
           pagination: {
-            total: totalEvents,
+            total: totalCount,
             page,
             limit,
-            pages: Math.ceil(totalEvents / limit)
+            pages: Math.ceil(totalCount / limit)
           }
         });
       }
       
-      // İl bazlı etkinlik bulunamadıysa, hobi bazlı etkinliklere devam et
-      console.log(`[eventController] No events found in province ${userProvince}, falling back to hobby recommendations`);
+      console.log('[eventController] İl + Hobi eşleşmesi bulunamadı, AŞAMA 2\'ye geçiliyor...');
     }
     
-    // İl bazlı etkinlik yoksa veya il bilgisi yoksa, hobi bazlı önerilere devam et
-    const hobbyQuery = {
-      $or: [
-        { hobby: { $in: hobbyIds } }, // Doğrudan hobi eşleşmesi
-        { 'hobby.category': { $in: hobbyCategories } } // Kategori eşleşmesi
-      ],
-      status: 'active'
-    };
+    // AŞAMA 2: Sadece İl eşleşmesi (hobi eşleşmesi bulunamadığında)
+    if (hasCity) {
+      console.log('[eventController] AŞAMA 2: Sadece İl eşleşmesi aranıyor...');
+      
+      const cityOnlyQuery = {
+        status: 'active',
+        'location.address': { $regex: userCity, $options: 'i' }
+      };
+      
+      console.log('[eventController] Sadece İl sorgusu:', JSON.stringify(cityOnlyQuery));
+      
+      const cityOnlyEvents = await Event.find(cityOnlyQuery)
+        .populate('organizer', 'username fullName profilePicture')
+        .populate('hobby', 'name category')
+        .sort({ startDate: 1 })
+        .skip(skip)
+        .limit(limit);
+      
+      const cityOnlyTotal = await Event.countDocuments(cityOnlyQuery);
+      
+      console.log(`[eventController] Sadece İl eşleşmesi: ${cityOnlyTotal} etkinlik bulundu`);
+      
+      if (cityOnlyEvents.length > 0) {
+        finalEvents = cityOnlyEvents;
+        totalCount = cityOnlyTotal;
+        filterType = 'city-based';
+        appliedFilters = ['city'];
+        responseMessage = hasHobbies 
+          ? `${userCity} ilinizdeki ${cityOnlyEvents.length} etkinlik bulundu (hobi eşleşmesi bulunamadı)`
+          : `${userCity} ilinizdeki ${cityOnlyEvents.length} etkinlik bulundu`;
+        
+        console.log('[eventController] ✅ İkinci en iyi eşleşme bulundu: Sadece İl');
+        
+        return res.json({
+          success: true,
+          data: finalEvents,
+          message: responseMessage,
+          filterInfo: {
+            userCity,
+            userHobbies: userHobbies.map(h => h.name),
+            appliedFilters,
+            filterType
+          },
+          userInfo: {
+            hasCity,
+            hasHobbies,
+            city: userCity,
+            hobbies: userHobbies.map(h => h.name)
+          },
+          pagination: {
+            total: totalCount,
+            page,
+            limit,
+            pages: Math.ceil(totalCount / limit)
+          }
+        });
+      }
+      
+      console.log('[eventController] İl eşleşmesi bulunamadı, AŞAMA 3\'e geçiliyor...');
+    }
     
-    console.log('[eventController] Hobby based query:', JSON.stringify(hobbyQuery));
+    // AŞAMA 3: Sadece Hobi eşleşmesi (il dışındaki etkinlikler)
+    if (hasHobbies) {
+      console.log('[eventController] AŞAMA 3: Sadece Hobi eşleşmesi aranıyor...');
+      
+      const hobbyIds = userHobbies.map(hobby => hobby._id);
+      const hobbyCategories = [...new Set(userHobbies.map(hobby => hobby.category))];
+      
+      const hobbyOnlyQuery = {
+        status: 'active',
+        $or: [
+          { hobby: { $in: hobbyIds } },
+          { 'hobby.category': { $in: hobbyCategories } }
+        ]
+      };
+      
+      // Eğer kullanıcının ili varsa, il dışındaki etkinlikleri getir
+      if (hasCity) {
+        hobbyOnlyQuery['location.address'] = { $not: { $regex: userCity, $options: 'i' } };
+      }
+      
+      console.log('[eventController] Sadece Hobi sorgusu:', JSON.stringify(hobbyOnlyQuery));
+      
+      const hobbyOnlyEvents = await Event.find(hobbyOnlyQuery)
+        .populate('organizer', 'username fullName profilePicture')
+        .populate('hobby', 'name category')
+        .sort({ startDate: 1 })
+        .skip(skip)
+        .limit(limit);
+      
+      const hobbyOnlyTotal = await Event.countDocuments(hobbyOnlyQuery);
+      
+      console.log(`[eventController] Sadece Hobi eşleşmesi: ${hobbyOnlyTotal} etkinlik bulundu`);
+      
+      if (hobbyOnlyEvents.length > 0) {
+        finalEvents = hobbyOnlyEvents;
+        totalCount = hobbyOnlyTotal;
+        filterType = 'hobby-based';
+        appliedFilters = ['hobby'];
+        responseMessage = hasCity 
+          ? `${userCity} ili dışında hobi alanlarınıza uygun ${hobbyOnlyEvents.length} etkinlik bulundu`
+          : `Hobi alanlarınıza uygun ${hobbyOnlyEvents.length} etkinlik bulundu`;
+        
+        console.log('[eventController] ✅ Üçüncü en iyi eşleşme bulundu: Sadece Hobi');
+        
+        return res.json({
+          success: true,
+          data: finalEvents,
+          message: responseMessage,
+          filterInfo: {
+            userCity,
+            userHobbies: userHobbies.map(h => h.name),
+            appliedFilters,
+            filterType
+          },
+          userInfo: {
+            hasCity,
+            hasHobbies,
+            city: userCity,
+            hobbies: userHobbies.map(h => h.name)
+          },
+          pagination: {
+            total: totalCount,
+            page,
+            limit,
+            pages: Math.ceil(totalCount / limit)
+          }
+        });
+      }
+      
+      console.log('[eventController] Hobi eşleşmesi de bulunamadı');
+    }
     
-    // Toplam hobi bazlı etkinlik sayısını bul
-    const totalHobbyEvents = await Event.countDocuments(hobbyQuery);
-    console.log(`[eventController] Found ${totalHobbyEvents} matching hobby-based events`);
+    // AŞAMA 4: Hiçbir eşleşme bulunamadı - Genel etkinlikler
+    console.log('[eventController] AŞAMA 4: Hiçbir eşleşme bulunamadı, genel etkinlikler getiriliyor...');
     
-    // Hobi bazlı etkinlikleri getir
-    const hobbyEvents = await Event.find(hobbyQuery)
+    const generalQuery = { status: 'active' };
+    
+    const generalEvents = await Event.find(generalQuery)
       .populate('organizer', 'username fullName profilePicture')
       .populate('hobby', 'name category')
       .sort({ startDate: 1 })
       .skip(skip)
       .limit(limit);
     
-    console.log(`[eventController] Returning ${hobbyEvents.length} hobby-based events for user ${user.username}`);
+    const generalTotal = await Event.countDocuments(generalQuery);
     
-    // İlk birkaç etkinliğin bilgilerini göster
-    if (hobbyEvents.length > 0) {
-      console.log('[eventController] Sample hobby events:', hobbyEvents.slice(0, Math.min(3, hobbyEvents.length)).map(e => ({
-        id: e._id,
-        title: e.title,
-        hobby: e.hobby?.name || 'No hobby',
-        category: e.hobby?.category || 'No category',
-        location: e.location?.address || 'No location'
-      })));
+    console.log(`[eventController] Genel etkinlikler: ${generalTotal} etkinlik bulundu`);
+    
+    finalEvents = generalEvents;
+    totalCount = generalTotal;
+    filterType = 'general';
+    appliedFilters = [];
+    
+    if (!hasCity && !hasHobbies) {
+      responseMessage = 'Profil bilgilerinizi tamamlayın, size özel etkinlikler gösterelim';
+    } else if (!hasCity) {
+      responseMessage = 'İl bilginizi ekleyin, yakınınızdaki etkinlikleri gösterelim';
+    } else if (!hasHobbies) {
+      responseMessage = 'Hobi bilgilerinizi ekleyin, ilgi alanlarınıza uygun etkinlikleri gösterelim';
+    } else {
+      responseMessage = 'Kriterlerinize uygun etkinlik bulunamadı, genel etkinlikler gösteriliyor';
     }
     
-    // Uygun mesajla birlikte yanıt ver
-    let responseMessage = 'Hobileriniz ile eşleşen etkinlikler listeleniyor';
+    console.log('[eventController] ⚠️ Fallback: Genel etkinlikler döndürülüyor');
     
     res.json({
       success: true,
-      data: hobbyEvents,
+      data: finalEvents,
       message: responseMessage,
+      filterInfo: {
+        userCity,
+        userHobbies: userHobbies.map(h => h.name),
+        appliedFilters,
+        filterType
+      },
+      userInfo: {
+        hasCity,
+        hasHobbies,
+        city: userCity,
+        hobbies: userHobbies.map(h => h.name)
+      },
       pagination: {
-        total: totalHobbyEvents,
+        total: totalCount,
         page,
         limit,
-        pages: Math.ceil(totalHobbyEvents / limit)
+        pages: Math.ceil(totalCount / limit)
       }
     });
   } catch (error) {
-    console.error('Önerilen etkinlikleri getirme hatası:', error);
+    console.error('Size özel etkinlikleri getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+};
+
+// @desc    Yaklaşan etkinlikleri getir (48 saat içinde başlayacak)
+// @route   GET /api/events/upcoming
+// @access  Private
+const getUpcomingEvents = async (req, res) => {
+  try {
+    console.log('[eventController] Yaklaşan etkinlikler getiriliyor, kullanıcı:', req.user.username);
+    
+    // Şu anki tarih
+    const now = new Date();
+    // 48 saat sonrası
+    const fortyEightHoursLater = new Date(now.getTime() + (48 * 60 * 60 * 1000));
+    
+    console.log('[eventController] Tarih aralığı:', {
+      now: now.toISOString(),
+      fortyEightHoursLater: fortyEightHoursLater.toISOString()
+    });
+    
+    // Kullanıcının katıldığı etkinlikleri bul
+    const user = await User.findById(req.user.id).populate('participatedEvents');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+    
+    // Kullanıcının katıldığı etkinlik ID'lerini al
+    const participatedEventIds = user.participatedEvents.map(event => event._id);
+    
+    console.log('[eventController] Kullanıcının katıldığı etkinlik sayısı:', participatedEventIds.length);
+    
+    // 48 saat içinde başlayacak ve kullanıcının katıldığı etkinlikleri getir
+    const upcomingEvents = await Event.find({
+      _id: { $in: participatedEventIds },
+      startDate: {
+        $gte: now,
+        $lte: fortyEightHoursLater
+      },
+      status: 'active'
+    })
+    .populate('organizer', 'username fullName profilePicture')
+    .populate('hobby', 'name category')
+    .sort({ startDate: 1 });
+    
+    console.log(`[eventController] ${upcomingEvents.length} yaklaşan etkinlik bulundu`);
+    
+    // Etkinlik bilgilerini logla
+    if (upcomingEvents.length > 0) {
+      console.log('[eventController] Yaklaşan etkinlikler:', upcomingEvents.map(e => ({
+        id: e._id,
+        title: e.title,
+        startDate: e.startDate,
+        location: e.location?.address || 'Konum belirtilmemiş'
+      })));
+    }
+    
+    res.json({
+      success: true,
+      data: upcomingEvents,
+      message: upcomingEvents.length > 0 
+        ? `${upcomingEvents.length} yaklaşan etkinliğiniz var` 
+        : 'Yaklaşan etkinliğiniz bulunmuyor'
+    });
+  } catch (error) {
+    console.error('Yaklaşan etkinlikleri getirme hatası:', error);
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası'
@@ -1025,5 +1201,6 @@ module.exports = {
   getNearbyEvents,
   getEventsByHobby,
   getRecommendedEvents,
+  getUpcomingEvents,
   cleanupExpiredEvents
 }; 

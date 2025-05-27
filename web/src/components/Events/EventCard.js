@@ -94,6 +94,11 @@ const EventCard = ({ event }) => {
           height="180"
           image={image}
           alt={title}
+          onError={(e) => {
+            console.error(`[EventCard] Görsel yüklenemedi: ${image}`, e);
+            // Hata durumunda varsayılan görsel kullan
+            e.target.src = 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60';
+          }}
         />
         <Chip
           label={category}

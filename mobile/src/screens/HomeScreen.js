@@ -35,6 +35,7 @@ const HomeScreen = ({ navigation }) => {
   const [nearbyEvents, setNearbyEvents] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('Tümü');
   const [loading, setLoading] = useState(true);
+  const [filterInfo, setFilterInfo] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recommendedLoading, setRecommendedLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,6 +45,8 @@ const HomeScreen = ({ navigation }) => {
   const [userCoordinates, setUserCoordinates] = useState(null);
   const [locationPermissionStatus, setLocationPermissionStatus] = useState(null);
   const [tabValue, setTabValue] = useState(0); // 0: Etkinlikler, 1: Yakınımdaki, 2: Arkadaşlarım
+  const maxDistance = 20; // Sabit maksimum mesafe (km)
+  const [isLocationTracking, setIsLocationTracking] = useState(false); // Konum izleme durumu
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 6,
@@ -130,20 +133,19 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  // Önerilen etkinlikleri getir
+  // Önerilen etkinlikleri getir (İl ve hobi bilgilerine göre)
   const fetchRecommendedEvents = async () => {
-    setRecommendedLoading(true);
-    
-    try {
-      console.log('[HomeScreen] Kullanıcı profili:', userProfile ? 'mevcut' : 'yok');
-      console.log('[HomeScreen] isLoggedIn durumu:', isLoggedIn);
-      
-      // İlk olarak login durumunu kontrol et
       if (!isLoggedIn) {
         console.warn('[HomeScreen] Kullanıcı giriş yapmamış, önerilen etkinlikler yüklenemiyor');
         setRecommendedLoading(false);
         return;
       }
+
+    setRecommendedLoading(true);
+    
+    try {
+      console.log('[HomeScreen] Kullanıcı profili:', userProfile ? 'mevcut' : 'yok');
+      console.log('[HomeScreen] isLoggedIn durumu:', isLoggedIn);
       
       // Token kontrolü
       const token = await AsyncStorage.getItem('token');
@@ -177,11 +179,20 @@ const HomeScreen = ({ navigation }) => {
         }
       }
       
+      // Kullanıcının hobi bilgilerini al
+      const userHobbies = userProfile?.hobbies || [];
+      
       console.log(`[HomeScreen] Kullanıcının ili: ${userCity || 'Bilinmiyor'}`);
+      console.log(`[HomeScreen] Kullanıcının hobi sayısı: ${userHobbies.length}`);
+      
+      if (userHobbies.length > 0) {
+        const hobbyNames = userHobbies.map(h => typeof h === 'object' ? h.name : h).join(', ');
+        console.log(`[HomeScreen] Kullanıcının hobileri: ${hobbyNames}`);
+      }
       
       try {
         // Şehir bilgisini getRecommendedEvents fonksiyonuna aktar
-        const response = await getRecommendedEvents(1, 4, userCity);
+        const response = await getRecommendedEvents(1, 8, userCity); // Mobilde daha fazla etkinlik göster
         
         if (response && response.success) {
           // API'den gelen verileri doğrula
@@ -190,10 +201,22 @@ const HomeScreen = ({ navigation }) => {
           );
           
           console.log(`[HomeScreen] ${validEvents.length} önerilen etkinlik yüklendi`);
+          console.log(`[HomeScreen] Backend mesajı: ${response.message || 'Mesaj yok'}`);
           
-          // İl bazlı mı kontrol et
-          if (response.message && response.message.includes('ilinizdeki')) {
-            console.log('[HomeScreen] Etkinlikler il bazlı filtrelendi:', response.message);
+          // Backend'den gelen filtreleme bilgilerini kaydet
+          if (response.filterInfo) {
+            setFilterInfo(response.filterInfo);
+            console.log('[HomeScreen] Filtreleme bilgileri:', response.filterInfo);
+          }
+          
+          // Backend'den gelen kullanıcı bilgilerini logla
+          if (response.userInfo) {
+            console.log('[HomeScreen] Kullanıcı bilgi özeti:', {
+              city: response.userInfo.city,
+              hobbies: response.userInfo.hobbies,
+              hasHobbies: response.userInfo.hasHobbies,
+              hasCity: response.userInfo.hasCity
+            });
           }
           
           setRecommendedEvents(validEvents);
@@ -249,6 +272,61 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  // Konum izleme başlat
+  const startLocationTracking = async () => {
+    try {
+      // Konum izni kontrol et
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        return;
+      }
+
+      setIsLocationTracking(true);
+
+      // Konum izlemeyi başlat
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 30000, // 30 saniyede bir güncelle
+          distanceInterval: 100, // 100 metre hareket ettiğinde güncelle
+        },
+        (location) => {
+          console.log('[HomeScreen] Konum güncellendi:', location.coords);
+          const { latitude, longitude } = location.coords;
+          const newCoords = [latitude, longitude];
+          
+          // Önceki konum ile karşılaştır
+          if (userCoordinates) {
+            const distance = calculateDistance(
+              userCoordinates[0], userCoordinates[1],
+              latitude, longitude
+            );
+            
+            // 500 metreden fazla hareket ettiyse yakındaki etkinlikleri yenile
+            if (distance > 0.5) {
+              console.log('[HomeScreen] Önemli konum değişikliği tespit edildi, etkinlikler yenileniyor');
+              setUserCoordinates(newCoords);
+              fetchNearbyEvents(newCoords);
+            } else {
+              // Sadece koordinatları güncelle
+              setUserCoordinates(newCoords);
+            }
+          } else {
+            // İlk konum
+            setUserCoordinates(newCoords);
+            fetchNearbyEvents(newCoords);
+          }
+        }
+      );
+
+      return subscription;
+    } catch (error) {
+      console.error('[HomeScreen] Konum izleme başlatılırken hata:', error);
+      setNearbyError('Konum izleme başlatılamadı: ' + error.message);
+      setIsLocationTracking(false);
+    }
+  };
+
   // Kullanıcının konumunu al ve yakındaki etkinlikleri getir
   const getUserLocationAndFetchNearbyEvents = async () => {
     setNearbyLoading(true);
@@ -274,6 +352,15 @@ const HomeScreen = ({ navigation }) => {
       
       // Yakındaki etkinlikleri getir
       await fetchNearbyEvents([latitude, longitude]);
+      
+      // Konum izlemeyi başlat (sadece yakınımdaki sekmesindeyken)
+      if (tabValue === 1) {
+        const subscription = await startLocationTracking();
+        // Subscription'ı sakla (cleanup için)
+        if (subscription) {
+          console.log('[HomeScreen] Konum izleme başlatıldı');
+        }
+      }
     } catch (error) {
       console.error('[HomeScreen] Konum alınırken hata:', error);
       setNearbyError('Konumunuz alınamadı: ' + error.message);
@@ -283,7 +370,7 @@ const HomeScreen = ({ navigation }) => {
   };
 
   // Yakındaki etkinlikleri getir
-  const fetchNearbyEvents = async (coords) => {
+  const fetchNearbyEvents = async (coords, distance = maxDistance) => {
     if (!coords) {
       setNearbyError('Konum bilgisi gerekli. Lütfen konum izni verin.');
       setNearbyLoading(false);
@@ -294,15 +381,17 @@ const HomeScreen = ({ navigation }) => {
     setNearbyError('');
     
     try {
-      // 20 km içindeki etkinlikleri getir
-      const response = await getNearbyEvents(coords, 20, 1, pagination.limit);
+      console.log(`[HomeScreen] ${distance}km içindeki etkinlikler getiriliyor...`);
+      
+      // Belirtilen mesafe içindeki etkinlikleri getir
+      const response = await getNearbyEvents(coords, distance, 1, pagination.limit * 2);
       
       if (response.success) {
         console.log("[HomeScreen] Yakındaki etkinlikler:", response.data);
         if (response.data && response.data.length > 0) {
           setNearbyEvents(response.data);
         } else {
-          setNearbyError('Yakınınızda etkinlik bulunamadı. Mesafeyi artırmak için yenileyin.');
+          setNearbyError(`Yakınınızda (${distance} km içinde) etkinlik bulunamadı. Mesafeyi artırmayı deneyin.`);
         }
       } else {
         setNearbyError(response.message || 'Yakındaki etkinlikler yüklenemedi.');
@@ -314,6 +403,8 @@ const HomeScreen = ({ navigation }) => {
       setNearbyLoading(false);
     }
   };
+
+
 
   // Yenileme işlemini güncelle
   const onRefresh = useCallback(() => {
@@ -387,6 +478,12 @@ const HomeScreen = ({ navigation }) => {
     // Yakınımdaki sekmesine geçildiğinde konum bilgisini al ve yakındaki etkinlikleri getir
     if (index === 1 && !nearbyEvents.length && !nearbyLoading) {
       getUserLocationAndFetchNearbyEvents();
+    }
+    
+    // Yakınımdaki sekmesinden çıkıldığında konum izlemeyi durdur
+    if (index !== 1 && isLocationTracking) {
+      setIsLocationTracking(false);
+      console.log('[HomeScreen] Yakınımdaki sekmesinden çıkıldı, konum izleme durduruldu');
     }
   };
   
@@ -505,12 +602,58 @@ const HomeScreen = ({ navigation }) => {
   };
 
   // Önerilen etkinlikler listesini yatay olarak göster
+  // Filtreleme türüne göre badge ve açıklama getir
+  const getFilterTypeDisplay = (filterInfo) => {
+    if (!filterInfo) return null;
+    
+    const { filterType, userCity, userHobbies } = filterInfo;
+    
+    switch (filterType) {
+      case 'city-and-hobby':
+        return {
+          badge: 'Şehir + Hobi Bazlı',
+          color: colors.success.main,
+          icon: '🎯',
+          description: `${userCity} ilinizdeki ${userHobbies.join(', ')} hobi alanlarınıza uygun etkinlikler`
+        };
+      case 'city-based':
+        return {
+          badge: 'Şehir Bazlı',
+          color: colors.info.main,
+          icon: '📍',
+          description: `${userCity} ilinizdeki etkinlikler (hobi eşleşmesi bulunamadı)`
+        };
+      case 'hobby-based':
+        return {
+          badge: 'Hobi Bazlı',
+          color: colors.warning.main,
+          icon: '🎨',
+          description: `${userHobbies.join(', ')} hobi alanlarınıza uygun etkinlikler (şehir dışı)`
+        };
+      case 'general':
+        return {
+          badge: 'Genel',
+          color: colors.grey[600],
+          icon: '📋',
+          description: 'Genel etkinlikler (profil bilgilerinizi tamamlayın)'
+        };
+      default:
+        return null;
+    }
+  };
+
   const renderRecommendedEvents = () => {
     if (!isLoggedIn) {
       return (
         <View style={styles.infoCard}>
+          <View style={styles.infoIconContainer}>
+            <Ionicons name="information-circle" size={24} color={colors.primary.main} />
+          </View>
           <Text style={styles.infoText}>
-            Hobilerinize uygun etkinlikleri görmek için giriş yapın
+            Kayıt olurken seçtiğiniz il ve hobi bilgilerinize göre size özel etkinlikleri görmek için giriş yapın
+          </Text>
+          <Text style={styles.infoSubText}>
+            🎯 Nasıl çalışır: Kayıt sırasında belirttiğiniz şehir ve hobi bilgilerine göre size özel filtreli liste
           </Text>
           <TouchableOpacity 
             style={styles.loginButtonSmall}
@@ -526,34 +669,150 @@ const HomeScreen = ({ navigation }) => {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color={colors.primary.main} />
+          <Text style={styles.loadingText}>Size özel etkinlikler yükleniyor...</Text>
         </View>
       );
     }
 
     if (recommendedEvents.length === 0) {
+      // Kullanıcının profil durumunu kontrol et
+      const userHobbies = userProfile?.hobbies || [];
+      const userLocation = userProfile?.location?.address || userProfile?.location?.city || userProfile?.location || '';
+      const userProvince = userLocation ? userLocation.split(',')[0]?.trim() : '';
+      
+      let message = '';
+      let suggestions = [];
+      
+      if (!userProvince && userHobbies.length === 0) {
+        message = 'Size özel etkinlikler gösterebilmek için profil bilgilerinizi tamamlamanız gerekiyor.';
+        suggestions = ['Profilinizde bulunduğunuz ili belirtin', 'İlgi alanlarınızı ve hobilerini ekleyin'];
+      } else if (!userProvince) {
+        message = 'Hobilerinize uygun etkinlikler var ancak bulunduğunuz ili belirtmediniz.';
+        suggestions = ['Profilinizde bulunduğunuz ili belirtin'];
+      } else if (userHobbies.length === 0) {
+        message = 'Bulunduğunuz ildeki etkinlikler mevcut ancak hobilerini belirtmediniz.';
+        suggestions = ['Profilinizde ilgi alanlarınızı ve hobilerini ekleyin'];
+      } else {
+        message = `${userProvince} ili ve belirlediğiniz hobi bilgilerine uygun etkinlik bulunamadı.`;
+        suggestions = ['Farklı hobiler ekleyebilirsiniz', 'Yeni etkinlik oluşturabilirsiniz'];
+      }
+
       return (
         <View style={styles.infoCard}>
-          <Text style={styles.infoText}>
-            {userProfile && userProfile.city 
-              ? `${userProfile.city} ilinde hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.` 
-              : 'Hobilerinize uygun etkinlik bulunamadı. Farklı hobiler ekleyebilir veya yeni etkinlikler oluşturabilirsiniz.'}
+          <View style={styles.infoIconContainer}>
+            <Ionicons name="search" size={24} color={colors.warning.main} />
+          </View>
+          <Text style={styles.infoText}>{message}</Text>
+          {suggestions.length > 0 && (
+            <View style={styles.suggestionsList}>
+              {suggestions.map((suggestion, index) => (
+                <Text key={index} style={styles.suggestionText}>
+                  • {suggestion}
           </Text>
+              ))}
+            </View>
+          )}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.outlineButton]}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.outlineButtonText}>Profili Düzenle</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.primaryButton]}
+              onPress={navigateToCreateEvent}
+            >
+              <Text style={styles.primaryButtonText}>Etkinlik Oluştur</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
 
+    // Filtreleme bilgilerini göster
+    const filterDisplay = getFilterTypeDisplay(filterInfo);
+
     return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.recommendedEventsList}
-      >
-        {recommendedEvents.map((item) => (
-          <View key={item._id} style={styles.recommendedEventCardContainer}>
-            <EventCard event={item} />
+      <View>
+
+
+        {/* Etkinlik listesi */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.recommendedEventsList}
+        >
+          {recommendedEvents.map((item) => (
+            <View key={item._id} style={styles.recommendedEventCardContainer}>
+                <EventCard event={item} showRecommendationBadge={true} />
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* Daha fazla etkinlik bağlantısı */}
+        {recommendedEvents.length >= 4 && (
+          <View style={styles.moreEventsContainer}>
+            <Text style={styles.moreEventsText}>Size uygun daha fazla etkinlik var</Text>
+            <TouchableOpacity 
+              style={styles.moreEventsButton}
+              onPress={() => {
+                setSelectedCategory('Tümü');
+                setTabValue(0);
+              }}
+            >
+              <Text style={styles.moreEventsButtonText}>Tüm Etkinlikleri Görüntüle</Text>
+            </TouchableOpacity>
           </View>
-        ))}
-      </ScrollView>
+        )}
+      </View>
+    );
+  };
+
+  // Mesafe hesaplama fonksiyonu
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Dünya'nın yarıçapı (km)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+    return distance;
+  };
+
+  // Yakındaki etkinlik öğesi render et
+  const renderNearbyEventItem = ({ item }) => {
+    // Mesafe bilgisini hesapla veya API'den gelen mesafeyi kullan
+    let distance = null;
+    
+    if (item.distance) {
+      // API'den gelen mesafe bilgisi
+      distance = typeof item.distance === 'string' ? item.distance : `${item.distance} km`;
+    } else if (userCoordinates && item.location && item.location.coordinates) {
+      // Koordinatlardan mesafe hesapla
+      const eventCoords = item.location.coordinates;
+      // MongoDB formatı: [longitude, latitude]
+      const calculatedDistance = calculateDistance(
+        userCoordinates[0], userCoordinates[1], 
+        eventCoords[1], eventCoords[0]
+      );
+      
+      if (calculatedDistance !== null) {
+        distance = `${calculatedDistance.toFixed(1)} km uzaklıkta`;
+      }
+    }
+
+    return (
+      <EventCard 
+        event={{
+          ...item,
+          distance: distance
+        }} 
+        onEventUpdated={onRefresh}
+      />
     );
   };
 
@@ -588,7 +847,10 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.emptyContainer}>
           <Ionicons name="location" size={48} color={colors.grey[500]} />
           <Text style={styles.emptyText}>
-            Yakınınızda (20 km içerisinde) etkinlik bulunamadı.
+            Yakınınızda ({maxDistance} km içerisinde) etkinlik bulunamadı.
+          </Text>
+          <Text style={styles.emptySubText}>
+            Arama mesafesini artırarak daha fazla etkinlik bulabilirsiniz.
           </Text>
           <TouchableOpacity 
             style={styles.createEventButton}
@@ -603,15 +865,38 @@ const HomeScreen = ({ navigation }) => {
     return (
       <FlatList
         data={nearbyEvents}
-        renderItem={renderEventItem}
+        renderItem={renderNearbyEventItem}
         keyExtractor={(item) => item._id}
         contentContainerStyle={styles.eventsList}
+        refreshControl={
+          <RefreshControl
+            refreshing={nearbyLoading}
+            onRefresh={getUserLocationAndFetchNearbyEvents}
+            colors={[colors.primary.main]}
+          />
+        }
         ListHeaderComponent={
-          <View style={styles.infoCard}>
-            <Ionicons name="information-circle" size={20} color={colors.primary.main} />
-            <Text style={styles.infoText}>
-              Konumunuza 20 km mesafe içerisindeki etkinlikler listeleniyor.
-            </Text>
+          <View>
+            <View style={styles.infoCard}>
+              <Ionicons 
+                name={isLocationTracking ? "location" : "information-circle"} 
+                size={20} 
+                color={isLocationTracking ? colors.success.main : colors.primary.main} 
+              />
+              <Text style={styles.infoText}>
+                Konumunuza {maxDistance} km mesafe içerisindeki etkinlikler listeleniyor.
+                {isLocationTracking && (
+                  <Text style={styles.trackingText}>
+                    {'\n'}📍 Konum anlık olarak takip ediliyor
+                  </Text>
+                )}
+                {userCoordinates && (
+                  <Text style={styles.coordinatesText}>
+                    {'\n'}Konum: {userCoordinates[0].toFixed(4)}, {userCoordinates[1].toFixed(4)}
+                  </Text>
+                )}
+              </Text>
+            </View>
           </View>
         }
       />
@@ -656,50 +941,33 @@ const HomeScreen = ({ navigation }) => {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
               <Ionicons name="flame" size={20} color="#FF7043" />
-              <Text style={styles.sectionTitle}>
-                {isLoggedIn && userProfile && userProfile.city 
-                  ? `${userProfile.city} İlindeki Etkinlikler` 
-                  : 'Size Özel Etkinlikler'}
-              </Text>
+              <Text style={styles.sectionTitle}>Size Özel Etkinlikler</Text>
             </View>
           </View>
           
           <Text style={styles.sectionSubtitle}>
             {isLoggedIn 
-              ? userProfile && userProfile.city 
-                ? `${userProfile.city} ili ve ilgi alanlarınıza göre önerilen etkinlikler`
-                : 'Hobi ve ilgi alanlarınıza göre, bulunduğunuz ildeki etkinlikler burada listelenir.' 
-              : 'Giriş yaparak hobilerinize ve bulunduğunuz ile göre etkinlikleri görebilirsiniz.'}
+              ? 'Kayıt olurken seçtiğiniz il ve hobi bilgilerinize göre size özel etkinlikler burada listelenir.' 
+              : 'Giriş yapın ve kayıt olurken seçtiğiniz il ve hobiler ile eşleşen özel etkinlikleri keşfedin.'}
           </Text>
           
-          {renderRecommendedEvents()}
-        </View>
 
-        {/* Popüler Etkinlikler */}
-        {popularEvents.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleContainer}>
-                <Ionicons name="star" size={20} color="#FFB300" />
-                <Text style={styles.sectionTitle}>Popüler Etkinlikler</Text>
-              </View>
+          
+          {!isLoggedIn && (
+            <View style={styles.featureInfoCard}>
+              <Text style={styles.featureInfoTitle}>💡 Nasıl çalışır?</Text>
+              <Text style={styles.featureInfoText}>
+                • Kayıt olurken <Text style={styles.bold}>şehir bilginizi</Text> seçin → O ildeki etkinlikler öncelikli gösterilir{'\n'}
+                • <Text style={styles.bold}>Hobi ve ilgi alanlarınızı</Text> belirtin → Size uygun etkinlikler filtrelenir{'\n'}
+                • Sistem bu iki kritere göre size özel bir liste oluşturur
+              </Text>
+            </View>
+          )}
+          
+          {renderRecommendedEvents()}
             </View>
             
-            <Text style={styles.sectionSubtitle}>En çok katılımcı olan etkinlikler</Text>
-            
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recommendedEventsList}
-            >
-              {popularEvents.map((item) => (
-                <View key={item._id} style={styles.recommendedEventCardContainer}>
-                  <EventCard event={item} />
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+
 
         {/* Tüm Etkinlikler Başlığı */}
         <View style={styles.section}>
@@ -1056,6 +1324,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20
   },
+  emptySubText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
   infoCard: {
     backgroundColor: colors.background.paper,
     padding: 12,
@@ -1073,6 +1348,17 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1
   },
+  coordinatesText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
+  },
+  trackingText: {
+    fontSize: 12,
+    color: colors.success.main,
+    fontWeight: 'bold',
+  },
+
   comingSoonContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1325,6 +1611,208 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     zIndex: 999,
+  },
+  // Size Özel Etkinlikler için yeni stil sınıfları
+  infoIconContainer: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  infoSubText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  loadingText: {
+    marginLeft: 8,
+    color: colors.text.secondary,
+    fontSize: 14,
+  },
+  suggestionsList: {
+    marginVertical: 12,
+    paddingLeft: 8,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  outlineButton: {
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    backgroundColor: 'transparent',
+  },
+  outlineButtonText: {
+    color: colors.primary.main,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  primaryButton: {
+    backgroundColor: colors.primary.main,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  matchInfoCard: {
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary.main,
+  },
+  matchInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  matchInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary.main,
+    marginLeft: 6,
+  },
+  matchInfoDetails: {
+    marginBottom: 8,
+  },
+  matchInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  matchInfoLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    minWidth: 60,
+  },
+  matchInfoValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginLeft: 8,
+    flex: 1,
+  },
+  matchInfoSubtext: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  moreEventsContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  moreEventsText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: 8,
+  },
+  moreEventsButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    borderRadius: 6,
+    backgroundColor: 'transparent',
+  },
+  moreEventsButtonText: {
+    color: colors.primary.main,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  featureInfoCard: {
+    backgroundColor: '#fff3e0',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#ffcc80',
+  },
+  featureInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f57c00',
+    marginBottom: 8,
+  },
+  featureInfoText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    lineHeight: 20,
+  },
+
+  bold: {
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  // Filtreleme bilgi kartı stilleri
+  filterInfoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  filterInfoIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  filterInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  filterInfoText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  filterTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  filterTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  filterTagText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });
 

@@ -172,6 +172,47 @@ export const leaveEvent = async (eventId) => {
   }
 };
 
+// Yaklaşan etkinlikleri getir (48 saat içinde başlayacak)
+export const getUpcomingEvents = async () => {
+  try {
+    console.log('[eventService] Fetching upcoming events (within 48 hours)');
+    
+    // Kimlik doğrulama kontrolü
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('[eventService] No token found, cannot fetch upcoming events');
+      return {
+        success: false,
+        message: 'Yaklaşan etkinlikler için lütfen giriş yapın'
+      };
+    }
+    
+    // API'den yaklaşan etkinlikleri getir
+    const response = await api.get('/events/upcoming', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.data && response.data.success) {
+      console.log(`[eventService] Successfully fetched ${response.data.data.length} upcoming events`);
+      return response.data;
+    } else {
+      console.error('[eventService] Invalid response format:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[eventService] Error fetching upcoming events:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Yaklaşan etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
+};
+
 // Kullanıcının hobilerine göre önerilen etkinlikleri getir
 export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => {
   try {
@@ -817,6 +858,36 @@ const findCityNameInAddress = (address) => {
   }
   
   return null;
+};
+
+/**
+ * Etkinlik siler
+ * @param {string} eventId - Silinecek etkinlik ID'si
+ * @returns {Promise<Object>}
+ */
+export const deleteEvent = async (eventId) => {
+  try {
+    console.log(`[eventService] Deleting event with ID: ${eventId}`);
+    
+    const response = await api.delete(`/events/${eventId}`);
+    
+    if (response.data && response.data.success) {
+      console.log('[eventService] Event deleted successfully');
+      return response.data;
+    } else {
+      console.error('[eventService] Invalid response format:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[eventService] Error deleting event:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Etkinlik silinirken bir hata oluştu'
+    };
+  }
 };
 
  

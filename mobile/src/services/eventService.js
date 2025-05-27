@@ -141,6 +141,80 @@ export const getEventById = async (eventId) => {
 };
 
 /**
+ * Yaklaşan etkinlikleri getir (48 saat içinde başlayacak)
+ * @returns {Promise} - API yanıtı
+ */
+export const getUpcomingEvents = async () => {
+  try {
+    console.log('[eventService] Yaklaşan etkinlikler getiriliyor (48 saat içinde)');
+    
+    // Token kontrolü
+    let token;
+    try {
+      token = await AsyncStorage.getItem('token');
+      console.log('[eventService] Token retrieved:', token ? 'Yes (length: ' + token.length + ')' : 'No');
+    } catch (tokenError) {
+      console.error('[eventService] Token okuma hatası:', tokenError);
+      return {
+        success: false,
+        message: 'Yaklaşan etkinlikler için lütfen giriş yapın'
+      };
+    }
+    
+    if (!token || token.trim().length === 0) {
+      console.warn('[eventService] Token bulunamadı, yaklaşan etkinlikler getirilemez');
+      return {
+        success: false,
+        message: 'Yaklaşan etkinlikler için lütfen giriş yapın'
+      };
+    }
+    
+    // Token'ı temizle
+    const cleanToken = token.toString().trim();
+    
+    // Base URL'i al
+    const baseUrl = await getBaseUrl();
+    
+    // API isteği yap
+    const response = await axios.get(`${baseUrl}/events/upcoming`, {
+      headers: {
+        'Authorization': `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log(`[eventService] Yaklaşan etkinlikler API yanıtı: ${response.status}`);
+    
+    if (response.status === 200 && response.data) {
+      if (response.data.success) {
+        console.log(`[eventService] ${response.data.data?.length || 0} yaklaşan etkinlik bulundu`);
+        return response.data;
+      } else if (Array.isArray(response.data)) {
+        // Alternatif API yanıt formatı için
+        console.log(`[eventService] ${response.data.length} yaklaşan etkinlik bulundu`);
+        return {
+          success: true,
+          data: response.data,
+          message: 'Yaklaşan etkinlikler'
+        };
+      }
+    }
+    
+    return {
+      success: false,
+      message: response.data?.message || 'Yaklaşan etkinlikler getirilemedi'
+    };
+  } catch (error) {
+    console.error('[eventService] Yaklaşan etkinlikler getirilirken hata:', error);
+    return {
+      success: false,
+      message: error.message || 'Yaklaşan etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
+};
+
+/**
  * Kullanıcının hobilerine göre önerilen etkinlikleri getir
  * @param {number} page - Sayfa numarası
  * @param {number} limit - Sayfa başına etkinlik sayısı
@@ -299,6 +373,80 @@ export const getRecommendedEvents = async (page = 1, limit = 4, city = null) => 
     return {
       success: false,
       message: error.message || 'Önerilen etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
+};
+
+/**
+ * Kullanıcının oluşturduğu etkinlikleri getir
+ * @returns {Promise} - API yanıtı
+ */
+export const getUserCreatedEvents = async () => {
+  try {
+    console.log('[eventService] Kullanıcının oluşturduğu etkinlikler getiriliyor');
+    
+    // Token kontrolü
+    let token;
+    try {
+      token = await AsyncStorage.getItem('token');
+      console.log('[eventService] Token retrieved:', token ? 'Yes (length: ' + token.length + ')' : 'No');
+    } catch (tokenError) {
+      console.error('[eventService] Token okuma hatası:', tokenError);
+      return {
+        success: false,
+        message: 'Kimlik doğrulama hatası'
+      };
+    }
+    
+    if (!token || token.trim().length === 0) {
+      console.warn('[eventService] Token bulunamadı, oluşturulan etkinlikler getirilemez');
+      return {
+        success: false,
+        message: 'Oluşturduğunuz etkinlikleri görmek için lütfen giriş yapın'
+      };
+    }
+    
+    // Token'ı temizle
+    const cleanToken = token.toString().trim();
+    
+    // Base URL'i al
+    const baseUrl = await getBaseUrl();
+    
+    // API isteği yap
+    const response = await axios.get(`${baseUrl}/users/created-events`, {
+      headers: {
+        'Authorization': `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log(`[eventService] Oluşturulan etkinlikler API yanıtı: ${response.status}`);
+    
+    if (response.status === 200 && response.data) {
+      if (response.data.success) {
+        console.log(`[eventService] ${response.data.data?.length || 0} oluşturulan etkinlik bulundu`);
+        return response.data;
+      } else if (Array.isArray(response.data)) {
+        // Alternatif API yanıt formatı için
+        console.log(`[eventService] ${response.data.length} oluşturulan etkinlik bulundu`);
+        return {
+          success: true,
+          data: response.data,
+          message: 'Oluşturulan etkinlikler'
+        };
+      }
+    }
+    
+    return {
+      success: false,
+      message: response.data?.message || 'Oluşturulan etkinlikler getirilemedi'
+    };
+  } catch (error) {
+    console.error('[eventService] Oluşturulan etkinlikler getirilirken hata:', error);
+    return {
+      success: false,
+      message: error.message || 'Oluşturulan etkinlikler yüklenirken bir hata oluştu'
     };
   }
 };

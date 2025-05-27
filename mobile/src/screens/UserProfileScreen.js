@@ -168,15 +168,7 @@ const UserProfileScreen = ({ route, navigation }) => {
           <View style={styles.userStats}>
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>{participatedEvents.length}</Text>
-              <Text style={styles.statLabel}>Etkinlik</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{user.followers?.length || 0}</Text>
-              <Text style={styles.statLabel}>Takipçi</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{user.following?.length || 0}</Text>
-              <Text style={styles.statLabel}>Takip Edilen</Text>
+              <Text style={styles.statLabel}>Katıldığı Etkinlik</Text>
             </View>
           </View>
         </View>

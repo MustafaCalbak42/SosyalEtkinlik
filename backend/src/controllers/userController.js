@@ -396,7 +396,21 @@ const getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password')
-      .populate('hobbies', 'name category description');
+      .populate('hobbies', 'name category description')
+      .populate({
+        path: 'participatedEvents',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      })
+      .populate({
+        path: 'events',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      });
 
     if (!user) {
       return res.status(404).json({ 
@@ -927,7 +941,21 @@ const getUserByUsername = async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username })
       .select('-password')
-      .populate('hobbies', 'name category description');
+      .populate('hobbies', 'name category description')
+      .populate({
+        path: 'participatedEvents',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      })
+      .populate({
+        path: 'events',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      });
 
     if (!user) {
       return res.status(404).json({
@@ -1174,6 +1202,42 @@ const getUserParticipatedEvents = async (req, res) => {
 };
 
 /**
+ * @desc    Kullanıcının oluşturduğu etkinlikleri getir
+ * @route   GET /api/users/created-events
+ * @access  Private
+ */
+const getUserCreatedEvents = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .populate({
+        path: 'events',
+        populate: [
+          { path: 'organizer', select: 'username fullName profilePicture' },
+          { path: 'hobby', select: 'name category' }
+        ]
+      });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Kullanıcı bulunamadı' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user.events
+    });
+  } catch (error) {
+    console.error('Oluşturulan etkinlikleri getirme hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+};
+
+/**
  * @desc    Kullanıcı bilgilerini ID'ye göre getir
  * @route   GET /api/users/:id
  * @access  Public
@@ -1208,7 +1272,21 @@ const getUserById = async (req, res) => {
       
       user = await User.findById(req.params.id)
         .select('-password')
-        .populate('hobbies', 'name category description');
+        .populate('hobbies', 'name category description')
+        .populate({
+          path: 'participatedEvents',
+          populate: [
+            { path: 'organizer', select: 'username fullName profilePicture' },
+            { path: 'hobby', select: 'name category' }
+          ]
+        })
+        .populate({
+          path: 'events',
+          populate: [
+            { path: 'organizer', select: 'username fullName profilePicture' },
+            { path: 'hobby', select: 'name category' }
+          ]
+        });
       
       console.log(`[getUserById] FindById result: ${user ? 'Found' : 'Not found'}`);
     }
@@ -1220,7 +1298,21 @@ const getUserById = async (req, res) => {
       // Try finding by username
       user = await User.findOne({ username: req.params.id })
         .select('-password')
-        .populate('hobbies', 'name category description');
+        .populate('hobbies', 'name category description')
+        .populate({
+          path: 'participatedEvents',
+          populate: [
+            { path: 'organizer', select: 'username fullName profilePicture' },
+            { path: 'hobby', select: 'name category' }
+          ]
+        })
+        .populate({
+          path: 'events',
+          populate: [
+            { path: 'organizer', select: 'username fullName profilePicture' },
+            { path: 'hobby', select: 'name category' }
+          ]
+        });
       
       console.log(`[getUserById] FindOne by username result: ${user ? 'Found' : 'Not found'}`);
       
@@ -1228,7 +1320,21 @@ const getUserById = async (req, res) => {
         // Try any custom ID field you might be using
         user = await User.findOne({ customId: req.params.id })
           .select('-password')
-          .populate('hobbies', 'name category description');
+          .populate('hobbies', 'name category description')
+          .populate({
+            path: 'participatedEvents',
+            populate: [
+              { path: 'organizer', select: 'username fullName profilePicture' },
+              { path: 'hobby', select: 'name category' }
+            ]
+          })
+          .populate({
+            path: 'events',
+            populate: [
+              { path: 'organizer', select: 'username fullName profilePicture' },
+              { path: 'hobby', select: 'name category' }
+            ]
+          });
         
         console.log(`[getUserById] FindOne by customId result: ${user ? 'Found' : 'Not found'}`);
       }
@@ -1257,6 +1363,145 @@ const getUserById = async (req, res) => {
       });
     }
     
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @desc    Benzer hobilere sahip kullanıcıları getir
+ * @route   GET /api/users/similar
+ * @access  Private
+ */
+const getSimilarUsers = async (req, res) => {
+  try {
+    console.log(`[userController] Similar users request - user: ${req.user.id}`);
+    
+    // Sayfalama parametrelerini al
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+    
+    // Mevcut kullanıcının bilgilerini al
+    const currentUser = await User.findById(req.user.id).populate('hobbies');
+    
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kullanıcı bulunamadı'
+      });
+    }
+    
+    const userHobbies = currentUser.hobbies || [];
+    console.log(`[userController] Current user has ${userHobbies.length} hobbies`);
+    
+    if (userHobbies.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'Benzer kullanıcıları görmek için lütfen profilinizde hobi bilgilerinizi ekleyin',
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          pages: 0
+        }
+      });
+    }
+    
+    // Kullanıcının hobi ID'lerini al
+    const hobbyIds = userHobbies.map(hobby => hobby._id);
+    
+    // Benzer hobilere sahip kullanıcıları bul
+    const similarUsers = await User.aggregate([
+      {
+        // Kendisi hariç diğer kullanıcıları filtrele
+        $match: {
+          _id: { $ne: currentUser._id },
+          hobbies: { $in: hobbyIds }
+        }
+      },
+      {
+        // Ortak hobi sayısını hesapla
+        $addFields: {
+          commonHobbiesCount: {
+            $size: {
+              $setIntersection: ['$hobbies', hobbyIds]
+            }
+          }
+        }
+      },
+      {
+        // En çok ortak hobiye sahip olanları önce sırala
+        $sort: { commonHobbiesCount: -1, createdAt: -1 }
+      },
+      {
+        // Sayfalama
+        $skip: skip
+      },
+      {
+        // Limit
+        $limit: limit
+      },
+      {
+        // Gereksiz alanları çıkar
+        $project: {
+          password: 0,
+          verificationToken: 0,
+          verificationTokenExpire: 0,
+          resetPasswordToken: 0,
+          resetPasswordExpire: 0
+        }
+      }
+    ]);
+    
+    // Hobi bilgilerini populate et
+    const populatedUsers = await User.populate(similarUsers, {
+      path: 'hobbies',
+      select: 'name category'
+    });
+    
+    // Her kullanıcı için ortak hobi bilgilerini ekle
+    const usersWithCommonHobbies = populatedUsers.map(user => {
+      const userHobbyIds = user.hobbies.map(h => h._id.toString());
+      const currentUserHobbyIds = hobbyIds.map(h => h.toString());
+      
+      // Ortak hobileri bul
+      const commonHobbies = user.hobbies.filter(hobby => 
+        currentUserHobbyIds.includes(hobby._id.toString())
+      );
+      
+      return {
+        ...user,
+        commonHobbies: commonHobbies,
+        commonHobbiesCount: commonHobbies.length
+      };
+    });
+    
+    // Toplam benzer kullanıcı sayısını hesapla
+    const totalSimilarUsers = await User.countDocuments({
+      _id: { $ne: currentUser._id },
+      hobbies: { $in: hobbyIds }
+    });
+    
+    console.log(`[userController] Found ${totalSimilarUsers} similar users, returning ${usersWithCommonHobbies.length}`);
+    
+    res.json({
+      success: true,
+      data: usersWithCommonHobbies,
+      message: `${userHobbies.length} hobi bilginize göre benzer kullanıcılar`,
+      pagination: {
+        page,
+        limit,
+        total: totalSimilarUsers,
+        pages: Math.ceil(totalSimilarUsers / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Benzer kullanıcıları getirme hatası:', error);
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası',
@@ -1326,6 +1571,8 @@ module.exports = {
   verifyEmail,
   resendVerificationEmail,
   getUserParticipatedEvents,
+  getUserCreatedEvents,
   getUserById,
-  getAllUsers
+  getAllUsers,
+  getSimilarUsers
 }; 

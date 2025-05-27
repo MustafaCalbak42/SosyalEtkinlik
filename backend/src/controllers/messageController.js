@@ -104,6 +104,10 @@ exports.sendEventMessage = async (req, res) => {
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.user.id;
+    console.log(`[messageController] getConversations - Kullanıcı ID: ${userId}`);
+
+    // ObjectId'yi doğru şekilde oluştur
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // MongoDB aggregation kullanarak konuşmaları grupla
     const conversations = await Message.aggregate([
@@ -112,8 +116,8 @@ exports.getConversations = async (req, res) => {
         $match: {
           messageType: 'private',
           $or: [
-            { sender: mongoose.Types.ObjectId(userId) },
-            { recipient: mongoose.Types.ObjectId(userId) }
+            { sender: userObjectId },
+            { recipient: userObjectId }
           ]
         }
       },
@@ -122,7 +126,7 @@ exports.getConversations = async (req, res) => {
         $group: {
           _id: {
             $cond: {
-              if: { $eq: ['$sender', mongoose.Types.ObjectId(userId)] },
+              if: { $eq: ['$sender', userObjectId] },
               then: '$recipient',
               else: '$sender'
             }
@@ -132,7 +136,7 @@ exports.getConversations = async (req, res) => {
             $sum: {
               $cond: [
                 { $and: [
-                  { $eq: ['$recipient', mongoose.Types.ObjectId(userId)] },
+                  { $eq: ['$recipient', userObjectId] },
                   { $eq: ['$isRead', false] }
                 ]},
                 1,
@@ -152,7 +156,10 @@ exports.getConversations = async (req, res) => {
         }
       },
       {
-        $unwind: '$userDetails'
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         // Sonuç şemasını düzenle
@@ -173,12 +180,14 @@ exports.getConversations = async (req, res) => {
       }
     ]);
 
+    console.log(`[messageController] ${conversations.length} konuşma bulundu`);
+
     res.json({
       success: true,
       data: conversations
     });
   } catch (error) {
-    console.error('Konuşma listesi hatası:', error);
+    console.error('[messageController] Konuşma listesi hatası:', error);
     res.status(500).json({
       success: false,
       message: 'Konuşma listesi alınamadı',

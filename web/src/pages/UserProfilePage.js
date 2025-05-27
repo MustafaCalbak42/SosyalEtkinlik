@@ -28,6 +28,7 @@ import {
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import Navbar from '../components/Layout/Navbar';
+import ProfileActivities from '../components/Profile/ProfileActivities';
 import { getUserById, followUser, unfollowUser } from '../services/userService';
 import { useAuth } from '../context/AuthContext';
 
@@ -279,30 +280,12 @@ const UserProfilePage = () => {
                 <Divider sx={{ width: '100%', my: 2 }} />
                 
                 <Grid container spacing={2} sx={{ textAlign: 'center' }}>
-                  <Grid item xs={4}>
-                    <Typography variant="h6" fontWeight="bold">
-                      {user.following?.length || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Takip Edilen
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={4}>
-                    <Typography variant="h6" fontWeight="bold">
-                      {user.followers?.length || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Takipçi
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={4}>
+                  <Grid item xs={12}>
                     <Typography variant="h6" fontWeight="bold">
                       {user.participatedEvents?.length || 0}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Etkinlik
+                      Katıldığı Etkinlik
                     </Typography>
                   </Grid>
                 </Grid>
@@ -353,43 +336,14 @@ const UserProfilePage = () => {
                 </Paper>
               )}
               
-              {/* Participated Events */}
-              <Paper sx={{ p: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  Katıldığı Etkinlikler
-                </Typography>
-                
-                {user.participatedEvents && user.participatedEvents.length > 0 ? (
-                  <Grid container spacing={2}>
-                    {user.participatedEvents.map((event) => (
-                      <Grid item xs={12} sm={6} key={event._id}>
-                        <Card sx={{ height: '100%' }}>
-                          <CardActionArea 
-                            onClick={() => navigate(`/events/${event._id}`)}
-                            sx={{ height: '100%' }}
-                          >
-                            <CardContent>
-                              <Typography variant="h6" component="div" noWrap>
-                                {event.title}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary" gutterBottom>
-                                {event.startDate && format(new Date(event.startDate), 'PPP', { locale: tr })}
-                              </Typography>
-                              <Typography variant="body2" noWrap>
-                                {typeof event.location === 'object' ? event.location.address : event.location}
-                              </Typography>
-                            </CardContent>
-                          </CardActionArea>
-                        </Card>
-                      </Grid>
-                    ))}
-                  </Grid>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    Henüz hiçbir etkinliğe katılmamış.
-                  </Typography>
-                )}
-              </Paper>
+              {/* User Activities */}
+              <ProfileActivities 
+                events={user.events || []}
+                participatedEvents={user.participatedEvents || []}
+                followers={user.followers || []}
+                following={user.following || []}
+                isCurrentUser={false}
+              />
             </Grid>
           </Grid>
         </Container>

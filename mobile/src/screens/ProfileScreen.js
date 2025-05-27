@@ -11,11 +11,13 @@ import {
   Image,
   Modal,
   Switch,
-  FlatList
+  FlatList,
+  RefreshControl
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
+import { getUserCreatedEvents } from '../services/eventService';
 import AuthContext from '../contexts/AuthContext';
 import { CommonActions } from '@react-navigation/native';
 import colors from '../shared/theme/colors';
@@ -48,6 +50,7 @@ const ProfileScreen = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (userProfile) {
@@ -213,14 +216,31 @@ const ProfileScreen = ({ navigation }) => {
     setLoadingEvents(true);
     
     try {
-      // Kullanıcının etkinliklerini getir
-      const response = await api.events.getAll({ userId: 'me' });
+      console.log('[ProfileScreen] Kullanıcının oluşturduğu etkinlikler yükleniyor...');
       
-      if (response.data && Array.isArray(response.data)) {
+      // Kullanıcının oluşturduğu etkinlikleri getir
+      const response = await getUserCreatedEvents();
+      
+      console.log('[ProfileScreen] Oluşturulan etkinlikler API yanıtı:', JSON.stringify(response, null, 2));
+      
+      if (response.success && Array.isArray(response.data)) {
         setUserEvents(response.data);
+        console.log(`[ProfileScreen] ${response.data.length} oluşturulan etkinlik bulundu`);
+        
+        // İlk 3 etkinliği detaylı olarak logla
+        if (response.data.length > 0) {
+          console.log('[ProfileScreen] İlk oluşturulan etkinlikler:');
+          response.data.slice(0, 3).forEach((event, index) => {
+            console.log(`${index + 1}. ${event.title} - ${new Date(event.startDate).toLocaleString('tr-TR')}`);
+          });
+        }
+      } else {
+        console.error('[ProfileScreen] Beklenmeyen yanıt formatı:', response);
+        setUserEvents([]);
       }
     } catch (error) {
-      console.error('Etkinlik yükleme hatası:', error);
+      console.error('[ProfileScreen] Oluşturulan etkinlikleri yükleme hatası:', error);
+      setUserEvents([]);
     } finally {
       setLoadingEvents(false);
     }
@@ -231,25 +251,52 @@ const ProfileScreen = ({ navigation }) => {
     setLoadingParticipatedEvents(true);
     
     try {
+      console.log('[ProfileScreen] Katıldığı etkinlikler yükleniyor...');
+      
+      // Token kontrolü
+      const token = await AsyncStorage.getItem('token');
+      if (!token || token.trim().length === 0) {
+        console.warn('[ProfileScreen] Token bulunamadı, katıldığı etkinlikler yüklenemiyor');
+        setParticipatedEvents([]);
+        setLoadingParticipatedEvents(false);
+        return;
+      }
+      
       // Kullanıcının katıldığı etkinlikleri getir
       const response = await api.events.getParticipatedEvents();
-      console.log('Participated events response:', response);
+      console.log('[ProfileScreen] Katıldığı etkinlikler API yanıtı:', JSON.stringify(response.data, null, 2));
       
       // Check for different response formats
       if (response.data && response.data.success && Array.isArray(response.data.data)) {
         // Standard API format with success and data properties
-        setParticipatedEvents(response.data.data);
-        console.log(`Found ${response.data.data.length} participated events`);
+        const events = response.data.data;
+        setParticipatedEvents(events);
+        console.log(`[ProfileScreen] ${events.length} katıldığı etkinlik bulundu`);
+        
+        // İlk 3 etkinliği detaylı olarak logla
+        if (events.length > 0) {
+          console.log('[ProfileScreen] İlk katıldığı etkinlikler:');
+          events.slice(0, 3).forEach((event, index) => {
+            console.log(`${index + 1}. ${event.title} - ${new Date(event.startDate).toLocaleString('tr-TR')}`);
+          });
+        }
       } else if (response.data && Array.isArray(response.data)) {
         // Direct array format
         setParticipatedEvents(response.data);
-        console.log(`Found ${response.data.length} participated events`);
+        console.log(`[ProfileScreen] ${response.data.length} katıldığı etkinlik bulundu (direct array)`);
       } else {
-        console.error('Unexpected response format:', response.data);
+        console.error('[ProfileScreen] Beklenmeyen yanıt formatı:', response.data);
         setParticipatedEvents([]);
       }
     } catch (error) {
-      console.error('Katılınan etkinlikleri yükleme hatası:', error);
+      console.error('[ProfileScreen] Katıldığı etkinlikleri yükleme hatası:', error);
+      
+      // API hatası detaylarını logla
+      if (error.response) {
+        console.error('[ProfileScreen] API hatası status:', error.response.status);
+        console.error('[ProfileScreen] API hatası data:', error.response.data);
+      }
+      
       setParticipatedEvents([]);
     } finally {
       setLoadingParticipatedEvents(false);
@@ -456,6 +503,25 @@ const ProfileScreen = ({ navigation }) => {
     return name.charAt(0).toUpperCase();
   };
 
+  // Profil sayfasını yenileme
+  const onRefresh = async () => {
+    setRefreshing(true);
+    
+    try {
+      console.log('[ProfileScreen] Sayfa yenileniyor...');
+      await Promise.all([
+        fetchUserProfile(),
+        fetchUserEvents(),
+        fetchParticipatedEvents()
+      ]);
+      console.log('[ProfileScreen] Sayfa yenileme tamamlandı');
+    } catch (error) {
+      console.error('[ProfileScreen] Sayfa yenileme hatası:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -466,7 +532,16 @@ const ProfileScreen = ({ navigation }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[colors.primary.main]}
+        />
+      }
+    >
       {/* Üst Profil Alanı */}
       <View style={styles.headerCard}>
         <View style={styles.headerTop}>
@@ -510,15 +585,7 @@ const ProfileScreen = ({ navigation }) => {
         <View style={styles.userStats}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{userEvents.length}</Text>
-            <Text style={styles.statLabel}>Etkinlik</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{user?.followers?.length || 0}</Text>
-            <Text style={styles.statLabel}>Takipçi</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{user?.following?.length || 0}</Text>
-            <Text style={styles.statLabel}>Takip Edilen</Text>
+            <Text style={styles.statLabel}>Oluşturduğu Etkinlik</Text>
           </View>
         </View>
       </View>

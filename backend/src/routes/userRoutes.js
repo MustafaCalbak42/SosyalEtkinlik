@@ -25,8 +25,10 @@ const {
   verifyEmail,
   resendVerificationEmail,
   getUserParticipatedEvents,
+  getUserCreatedEvents,
   getUserById,
-  getAllUsers
+  getAllUsers,
+  getSimilarUsers
 } = require('../controllers/userController');
 
 // Middleware ve Validatörler
@@ -229,6 +231,20 @@ router.put('/unfollow/:userId', protect, unfollowUser);
  * @access  Private
  */
 router.get('/participated-events', protect, getUserParticipatedEvents);
+
+/**
+ * @route   GET /api/users/created-events
+ * @desc    Kullanıcının oluşturduğu etkinlikleri getir
+ * @access  Private
+ */
+router.get('/created-events', protect, getUserCreatedEvents);
+
+/**
+ * @route   GET /api/users/similar
+ * @desc    Benzer hobilere sahip kullanıcıları getir
+ * @access  Private
+ */
+router.get('/similar', protect, getSimilarUsers);
 
 /**
  * @route   GET /api/users/all

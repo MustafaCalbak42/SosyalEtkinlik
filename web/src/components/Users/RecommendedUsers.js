@@ -1,102 +1,210 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Typography, 
   Avatar, 
   Button, 
   Divider, 
-  Chip
+  Chip,
+  CircularProgress,
+  Alert
 } from '@mui/material';
-import { PersonAdd } from '@mui/icons-material';
-
-// Mock data for recommended users
-const mockUsers = [
-  {
-    id: 1,
-    name: 'Ahmet Yılmaz',
-    username: 'ahmetyilmaz',
-    avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-    mutualInterests: ['Müzik', 'Doğa'],
-    mutualEventCount: 2
-  },
-  {
-    id: 2,
-    name: 'Ayşe Demir',
-    username: 'aysedemir',
-    avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-    mutualInterests: ['Spor', 'Teknoloji'],
-    mutualEventCount: 1
-  },
-  {
-    id: 3,
-    name: 'Mehmet Kaya',
-    username: 'mehmetkaya',
-    avatar: 'https://randomuser.me/api/portraits/men/22.jpg',
-    mutualInterests: ['Yemek', 'Seyahat', 'Müzik'],
-    mutualEventCount: 3
-  }
-];
+import { Person } from '@mui/icons-material';
+import { useAuth } from '../../context/AuthContext';
+import { getSimilarUsers } from '../../services/userService';
+import { useNavigate } from 'react-router-dom';
 
 const RecommendedUsers = () => {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSimilarUsers();
+    }
+  }, [isAuthenticated]);
+
+  const fetchSimilarUsers = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      const response = await getSimilarUsers(1, 5);
+      if (response.success) {
+        setUsers(response.data);
+        console.log(`[RecommendedUsers] ${response.data.length} benzer kullanıcı yüklendi`);
+      } else {
+        setError(response.message || 'Benzer kullanıcılar yüklenirken bir hata oluştu');
+      }
+    } catch (error) {
+      console.error('Benzer kullanıcıları yüklerken hata:', error);
+      setError('Benzer kullanıcılar yüklenirken bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Giriş yapılmamışsa bilgi mesajı göster
+  if (!isAuthenticated) {
+    return (
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Hobilerinize benzer kullanıcıları görmek için <Button 
+          variant="outlined" 
+          size="small" 
+          color="primary"
+          sx={{ ml: 1 }}
+          onClick={() => navigate('/login')}
+        >
+          Giriş Yapın
+        </Button>
+      </Alert>
+    );
+  }
+
+  // Yükleme durumu
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+        <CircularProgress size={24} />
+        <Typography variant="body2" sx={{ ml: 2, mt: 0.5 }}>
+          Benzer kullanıcılar yükleniyor...
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Hata durumu
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mb: 2 }}>
+        {error}
+        <Button 
+          variant="outlined" 
+          size="small" 
+          color="primary"
+          sx={{ mt: 1, ml: 1 }}
+          onClick={fetchSimilarUsers}
+        >
+          Tekrar Dene
+        </Button>
+      </Alert>
+    );
+  }
+
+  // Kullanıcı yoksa
+  if (users.length === 0) {
+    return (
+      <Box sx={{ py: 2, textAlign: 'center' }}>
+        <Person sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Henüz benzer hobilere sahip kullanıcı bulunamadı.
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Profilinizde hobi bilgilerinizi ekleyerek benzer kullanıcıları keşfedebilirsiniz.
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Kullanıcı profil resmi için initials oluştur
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const names = name.split(' ');
+    if (names.length >= 2) {
+      return `${names[0].charAt(0)}${names[1].charAt(0)}`.toUpperCase();
+    }
+    return name.charAt(0).toUpperCase();
+  };
+
+  // Kullanıcı profiline git
+  const handleUserClick = (username) => {
+    navigate(`/profile/${username}`);
+  };
+
   return (
     <Box>
-      {mockUsers.map((user, index) => (
-        <Box key={user.id}>
+      {users.map((user, index) => (
+        <Box key={user._id || user.id}>
           <Box sx={{ py: 1.5 }}>
-            <Box sx={{ display: 'flex', mb: 1 }}>
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                mb: 1,
+                cursor: 'pointer',
+                borderRadius: 1,
+                p: 1,
+                '&:hover': {
+                  backgroundColor: 'action.hover'
+                }
+              }}
+              onClick={() => handleUserClick(user.username)}
+            >
               <Avatar 
-                src={user.avatar} 
-                alt={user.name}
-                sx={{ width: 40, height: 40, mr: 1.5 }}
-              />
+                src={user.profilePicture} 
+                alt={user.fullName || user.username}
+                sx={{ width: 40, height: 40, mr: 1.5, bgcolor: 'primary.main' }}
+              >
+                {!user.profilePicture && getInitials(user.fullName || user.username)}
+              </Avatar>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" fontWeight="bold">
-                  {user.name}
+                  {user.fullName || user.username}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   @{user.username}
                 </Typography>
+                {user.bio && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    {user.bio.length > 50 ? `${user.bio.substring(0, 50)}...` : user.bio}
+                  </Typography>
+                )}
               </Box>
-              <Button 
-                variant="outlined" 
-                size="small" 
-                startIcon={<PersonAdd />}
-                sx={{ 
-                  height: 32,
-                  minWidth: 'auto',
-                  borderRadius: 16
-                }}
-              >
-                Takip Et
-              </Button>
             </Box>
             
-            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, ml: 0.5 }}>
-              {user.mutualInterests.map(interest => (
-                <Chip 
-                  key={interest} 
-                  label={interest} 
-                  size="small"
-                  variant="outlined" 
-                  sx={{ 
-                    height: 24,
-                    '& .MuiChip-label': {
-                      px: 1,
-                      fontSize: '0.7rem'
-                    }
-                  }} 
-                />
-              ))}
-              <Typography variant="caption" sx={{ ml: 0.5 }}>
-                ortak ilgi
-              </Typography>
-            </Box>
-            
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, ml: 0.5 }}>
-              {user.mutualEventCount} ortak etkinliğe katıldı
-            </Typography>
+            {/* Ortak hobiler */}
+            {user.commonHobbies && user.commonHobbies.length > 0 && (
+              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, ml: 0.5 }}>
+                {user.commonHobbies.slice(0, 3).map(hobby => (
+                  <Chip 
+                    key={hobby._id || hobby.name} 
+                    label={hobby.name || hobby} 
+                    size="small"
+                    variant="outlined" 
+                    color="success"
+                    sx={{ 
+                      height: 24,
+                      '& .MuiChip-label': {
+                        px: 1,
+                        fontSize: '0.7rem'
+                      }
+                    }} 
+                  />
+                ))}
+                {user.commonHobbies.length > 3 && (
+                  <Chip 
+                    label={`+${user.commonHobbies.length - 3}`}
+                    size="small"
+                    variant="outlined" 
+                    color="success"
+                    sx={{ 
+                      height: 24,
+                      '& .MuiChip-label': {
+                        px: 1,
+                        fontSize: '0.7rem'
+                      }
+                    }} 
+                  />
+                )}
+                <Typography variant="caption" sx={{ ml: 0.5 }} color="success.main">
+                  {user.commonHobbiesCount || user.commonHobbies.length} ortak hobi
+                </Typography>
+              </Box>
+            )}
           </Box>
-          {index < mockUsers.length - 1 && <Divider />}
+          {index < users.length - 1 && <Divider />}
         </Box>
       ))}
     </Box>

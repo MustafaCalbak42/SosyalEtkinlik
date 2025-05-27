@@ -16,6 +16,7 @@ const {
   getNearbyEvents,
   getEventsByHobby,
   getRecommendedEvents,
+  getUpcomingEvents,
   cleanupExpiredEvents
 } = require('../controllers/eventController');
 
@@ -70,6 +71,11 @@ router.get('/hobby/:hobbyId', getEventsByHobby);
 // @desc    Kullanıcıya önerilen etkinlikleri getir (Hobilerine göre)
 // @access  Private
 router.get('/recommended', protect, getRecommendedEvents);
+
+// @route   GET /api/events/upcoming
+// @desc    Yaklaşan etkinlikleri getir (48 saat içinde başlayacak)
+// @access  Private
+router.get('/upcoming', protect, getUpcomingEvents);
 
 // @route   POST /api/events/cleanup
 // @desc    Süresi dolmuş etkinlikleri temizle (Admin)

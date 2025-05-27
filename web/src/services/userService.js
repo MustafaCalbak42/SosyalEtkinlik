@@ -474,6 +474,33 @@ export const getUserParticipatedEvents = async () => {
 };
 
 /**
+ * Kullanıcının oluşturduğu etkinlikleri getirir
+ * @returns {Promise<Object>}
+ */
+export const getUserCreatedEvents = async () => {
+  try {
+    console.log('[userService] Fetching user created events');
+    const response = await axiosInstance.get(`${API_URL}/created-events`);
+    
+    if (response.data && response.data.success) {
+      return response.data;
+    } else {
+      console.error('[userService] Invalid response format:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[userService] Error fetching created events:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Oluşturulan etkinlikler yüklenirken bir hata oluştu'
+    };
+  }
+};
+
+/**
  * Kullanıcı bilgilerini ID'ye göre getirir
  * @param {string} userId - Kullanıcı ID'si
  * @returns {Promise<Object>}
@@ -590,6 +617,52 @@ export const getUserById = async (userId) => {
       success: false,
       message: 'Kullanıcı bilgileri işlenirken beklenmedik bir hata oluştu',
       code: 'UNEXPECTED_ERROR'
+    };
+  }
+};
+
+/**
+ * Benzer hobilere sahip kullanıcıları getirir
+ * @param {number} page - Sayfa numarası
+ * @param {number} limit - Sayfa başına kayıt sayısı
+ * @returns {Promise<Object>}
+ */
+export const getSimilarUsers = async (page = 1, limit = 5) => {
+  try {
+    console.log('[userService] Fetching similar users based on hobbies');
+    
+    // Kimlik doğrulama kontrolü
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('[userService] No token found, cannot fetch similar users');
+      return {
+        success: false,
+        message: 'Benzer kullanıcıları görmek için lütfen giriş yapın'
+      };
+    }
+    
+    const response = await axiosInstance.get(`${API_URL}/similar`, {
+      params: { page, limit },
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.data && response.data.success) {
+      console.log(`[userService] Successfully fetched ${response.data.data.length} similar users`);
+      return response.data;
+    } else {
+      console.error('[userService] Invalid response format:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[userService] Error fetching similar users:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Benzer kullanıcılar yüklenirken bir hata oluştu'
     };
   }
 };
