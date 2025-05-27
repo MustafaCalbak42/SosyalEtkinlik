@@ -48,7 +48,11 @@ const storage = multer.diskStorage({
     cb(null, 'public/uploads/profiles/');
   },
   filename: function(req, file, cb) {
-    cb(null, 'profile-' + req.user.id + '-' + Date.now() + path.extname(file.originalname));
+    // Kayıt sırasında kullanıcı ID'si henüz yok, o yüzden timestamp ve random string kullanıyoruz
+    const userId = req.user ? req.user.id : 'temp';
+    const randomString = Math.random().toString(36).substring(2, 15);
+    const timestamp = Date.now();
+    cb(null, `profile-${userId}-${timestamp}-${randomString}${path.extname(file.originalname)}`);
   }
 });
 
@@ -74,7 +78,7 @@ const upload = multer({
  * @desc    Kullanıcı kaydı
  * @access  Public
  */
-router.post('/register', registerValidation, registerUser);
+router.post('/register', upload.single('profilePicture'), registerValidation, registerUser);
 
 /**
  * @route   POST /api/users/login
@@ -252,6 +256,13 @@ router.get('/similar', protect, getSimilarUsers);
  * @access  Private
  */
 router.get('/all', protect, getAllUsers);
+
+/**
+ * @route   GET /api/users
+ * @desc    Tüm kullanıcıları getir (alternatif endpoint)
+ * @access  Private
+ */
+router.get('/', protect, getAllUsers);
 
 /**
  * @route   GET /api/users/:id

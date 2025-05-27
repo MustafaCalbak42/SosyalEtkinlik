@@ -380,7 +380,40 @@ const api = {
           throw error;
         });
     },
-    register: (userData) => apiClient.post('/users/register', userData),
+    register: (userData, profilePicture = null) => {
+      if (profilePicture) {
+        // FormData oluştur
+        const formData = new FormData();
+        
+        // Kullanıcı verilerini FormData'ya ekle
+        Object.keys(userData).forEach(key => {
+          if (key === 'hobbies' && Array.isArray(userData[key])) {
+            formData.append(key, JSON.stringify(userData[key]));
+          } else if (key === 'interests' && Array.isArray(userData[key])) {
+            formData.append(key, JSON.stringify(userData[key]));
+          } else if (key === 'location' && typeof userData[key] === 'object') {
+            formData.append(key, JSON.stringify(userData[key]));
+          } else {
+            formData.append(key, userData[key]);
+          }
+        });
+        
+        // Profil fotoğrafını ekle
+        formData.append('profilePicture', {
+          uri: profilePicture.uri,
+          type: profilePicture.type || 'image/jpeg',
+          name: profilePicture.fileName || 'profile.jpg',
+        });
+        
+        return apiClient.post('/users/register', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+      } else {
+        return apiClient.post('/users/register', userData);
+      }
+    },
     forgotPassword: (emailData) => apiClient.post('/users/forgot-password', emailData),
     verifyResetCode: (verificationData) => apiClient.post('/users/verify-reset-code', verificationData),
     resetPassword: (passwordData) => apiClient.post('/users/reset-password', passwordData),

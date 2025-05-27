@@ -127,7 +127,7 @@ const ProfileInfo = ({ profile, onProfileUpdate }) => {
         <CardContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
             <ProfileAvatar 
-              src={profile.profilePicture || "/assets/default-profile.png"} 
+              src={profile.profilePicture ? `http://localhost:5000/${profile.profilePicture}` : "/assets/default-profile.png"} 
               alt={profile.fullName}
             />
             <Typography variant="h5" fontWeight="bold">

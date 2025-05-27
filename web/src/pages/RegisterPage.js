@@ -19,7 +19,9 @@ import {
   Autocomplete,
   Chip,
   FormHelperText,
-  Divider
+  Divider,
+  Avatar,
+  Badge
 } from '@mui/material';
 import { 
   Visibility, 
@@ -31,7 +33,9 @@ import {
   MarkEmailRead as MarkEmailReadIcon,
   OpenInNew as OpenInNewIcon,
   LocationOn as LocationIcon,
-  Interests as InterestsIcon
+  Interests as InterestsIcon,
+  PhotoCamera as PhotoCameraIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
@@ -63,6 +67,11 @@ const RegisterPage = () => {
   const [loadingHobbies, setLoadingHobbies] = useState(false);
   const [customHobbies, setCustomHobbies] = useState([]);
   const [newCustomHobby, setNewCustomHobby] = useState('');
+  
+  // Profil fotoğrafı state'leri
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [profilePicturePreview, setProfilePicturePreview] = useState(null);
+  const [profilePictureError, setProfilePictureError] = useState('');
   
   const password = watch('password');
   
@@ -124,6 +133,46 @@ const RegisterPage = () => {
   }, []);
   
   const handleClickShowPassword = () => setShowPassword(!showPassword);
+
+  // Profil fotoğrafı işlemleri
+  const handleProfilePictureChange = (event) => {
+    const file = event.target.files[0];
+    setProfilePictureError('');
+    
+    if (file) {
+      // Dosya boyutu kontrolü (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setProfilePictureError('Dosya boyutu 5MB\'dan küçük olmalıdır');
+        return;
+      }
+      
+      // Dosya tipi kontrolü
+      if (!file.type.startsWith('image/')) {
+        setProfilePictureError('Lütfen sadece resim dosyası seçin');
+        return;
+      }
+      
+      setProfilePicture(file);
+      
+      // Önizleme oluştur
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setProfilePicturePreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveProfilePicture = () => {
+    setProfilePicture(null);
+    setProfilePicturePreview(null);
+    setProfilePictureError('');
+    // File input'u temizle
+    const fileInput = document.getElementById('profile-picture-input');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
 
   // Kategori renklerini belirler
   const getCategoryColor = (category) => {
@@ -302,6 +351,7 @@ const RegisterPage = () => {
     try {
       console.log('Kayıt verileri:', data);
       console.log('Seçilen hobiler:', data.hobbies);
+      console.log('Profil fotoğrafı:', profilePicture);
       
       // Form verileri hazırlanıyor
       const registerData = {
@@ -318,7 +368,7 @@ const RegisterPage = () => {
       // Loglama
       console.log('İşlenmemiş kayıt verileri:', registerData);
       
-      const response = await registerUser(registerData);
+      const response = await registerUser(registerData, profilePicture);
       
       // Başarılı kayıt
       setSuccess(true);
@@ -326,6 +376,7 @@ const RegisterPage = () => {
       
       // Form içeriğini temizle
       reset();
+      handleRemoveProfilePicture();
       
       // Geliştirme ortamında test e-posta URL'sini göster
       if (response.developerInfo && response.developerInfo.emailPreviewUrl) {
@@ -445,6 +496,78 @@ const RegisterPage = () => {
                 <Typography variant="subtitle1" color="primary" fontWeight="medium" sx={{ mb: 2 }}>
                   Kişisel Bilgiler
                 </Typography>
+                
+                {/* Profil Fotoğrafı Yükleme */}
+                <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <input
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      id="profile-picture-input"
+                      type="file"
+                      onChange={handleProfilePictureChange}
+                    />
+                    <label htmlFor="profile-picture-input">
+                      <Badge
+                        overlap="circular"
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        badgeContent={
+                          <IconButton
+                            color="primary"
+                            aria-label="profil fotoğrafı yükle"
+                            component="span"
+                            sx={{
+                              backgroundColor: 'white',
+                              '&:hover': { backgroundColor: 'grey.100' },
+                              boxShadow: 1
+                            }}
+                          >
+                            <PhotoCameraIcon />
+                          </IconButton>
+                        }
+                      >
+                        <Avatar
+                          src={profilePicturePreview}
+                          sx={{ 
+                            width: 120, 
+                            height: 120, 
+                            cursor: 'pointer',
+                            border: '3px solid',
+                            borderColor: profilePictureError ? 'error.main' : 'primary.main'
+                          }}
+                        >
+                          {!profilePicturePreview && <PersonIcon sx={{ fontSize: 60 }} />}
+                        </Avatar>
+                      </Badge>
+                    </label>
+                    
+                    {profilePicture && (
+                      <Box sx={{ mt: 1 }}>
+                        <Button
+                          size="small"
+                          color="error"
+                          startIcon={<DeleteIcon />}
+                          onClick={handleRemoveProfilePicture}
+                        >
+                          Kaldır
+                        </Button>
+                      </Box>
+                    )}
+                    
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      Profil Fotoğrafı (İsteğe Bağlı)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Maksimum 5MB, JPG/PNG formatında
+                    </Typography>
+                    
+                    {profilePictureError && (
+                      <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
+                        {profilePictureError}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
                 
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Container, Box, Avatar, Menu, MenuItem, IconButton, Badge } from '@mui/material';
-import { AccountCircle, Chat, Home, Logout, Notifications, Settings } from '@mui/icons-material';
+import { AccountCircle, Chat, Home, Logout, Settings } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
 const MainLayout = ({ children }) => {
@@ -76,12 +76,6 @@ const MainLayout = ({ children }) => {
                 Mesajlar
               </Button>
               
-              <IconButton color="inherit" aria-label="notifications">
-                <Badge badgeContent={0} color="error">
-                  <Notifications />
-                </Badge>
-              </IconButton>
-              
               <IconButton
                 size="large"
                 edge="end"
@@ -93,7 +87,7 @@ const MainLayout = ({ children }) => {
               >
                 {user?.profilePicture ? (
                   <Avatar 
-                    src={`http://localhost:5000/uploads/${user.profilePicture}`}
+                    src={`http://localhost:5000/${user.profilePicture}`}
                     alt={user?.fullName} 
                     sx={{ width: 32, height: 32 }}
                   />

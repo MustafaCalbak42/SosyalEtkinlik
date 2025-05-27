@@ -134,7 +134,7 @@ const ProfilePhotoUpload = ({ profile, setProfile }) => {
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 2 }}>
           <Box sx={{ position: 'relative' }}>
             <LargeAvatar 
-              src={previewUrl || (profile?.profilePicture || "/assets/default-profile.png")} 
+              src={previewUrl || (profile?.profilePicture ? `http://localhost:5000/${profile.profilePicture}` : "/assets/default-profile.png")} 
               alt={profile?.fullName}
             />
             <IconButton 

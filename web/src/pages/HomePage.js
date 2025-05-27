@@ -973,8 +973,6 @@ function HomePage() {
         return renderAllEvents();
       case 1: // Yakınımdaki sekmesi
         return renderNearbyEvents();
-      case 2: // Arkadaşlarım sekmesi
-        return renderFriendsEvents();
       default:
         return renderAllEvents();
     }
@@ -1166,27 +1164,6 @@ function HomePage() {
     );
   };
 
-  // Arkadaşların etkinliklerini render et
-  const renderFriendsEvents = () => {
-    return (
-      <Paper sx={{ p: 4, textAlign: 'center', mt: 2 }}>
-        <Typography>
-          Arkadaşlarınızın etkinlikleri burada listelenecek.
-        </Typography>
-        {!isAuthenticated && (
-          <Button 
-            variant="contained" 
-            color="primary" 
-            sx={{ mt: 2 }}
-            onClick={() => navigate('/login')}
-          >
-            Giriş Yap
-          </Button>
-        )}
-      </Paper>
-    );
-  };
-
   return (
     <MainLayout>
       <HeroSection>
@@ -1300,7 +1277,6 @@ function HomePage() {
               >
                 <Tab icon={<Event />} label="Etkinlikler" />
                 <Tab icon={<LocationOn />} label="Yakınımdaki" />
-                <Tab icon={<People />} label="Arkadaşlarım" />
               </Tabs>
             </Paper>
             
@@ -1335,7 +1311,7 @@ function HomePage() {
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Event sx={{ mr: 1 }} color="primary" />
               <Typography variant="h6" component="h3" fontWeight="bold">
-                Yaklaşan Etkinlikleriniz (2 Gün İçinde)
+                Yaklaşan Etkinlikleriniz (48 Saat İçinde)
               </Typography>
             </Box>
             <UpcomingEvents 

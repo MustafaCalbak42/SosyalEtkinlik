@@ -256,9 +256,9 @@ export const getAllUsers = async (page = 1, limit = 10) => {
     
     // Endpoint'leri dene
     const endpoints = [
-      `${API_URL}/users`,
       `${API_URL}/users/all`,
-      `${API_URL}/users/list`
+      `${API_URL}/users`,
+      `${API_URL}/users/similar`
     ];
     
     // Varsayılan örnek kullanıcılar (API'ler çalışmadığında gösterilecek)
@@ -377,6 +377,57 @@ export const getAllUsers = async (page = 1, limit = 10) => {
   }
 };
 
+/**
+ * Benzer hobilere sahip kullanıcıları getirir
+ * @param {number} page - Sayfa numarası
+ * @param {number} limit - Sayfa başına kayıt sayısı
+ * @returns {Promise<Object>}
+ */
+export const getSimilarUsers = async (page = 1, limit = 5) => {
+  try {
+    console.log('[userService] Hobi bazlı benzer kullanıcılar getiriliyor');
+    
+    // Token kontrolü
+    const token = await AsyncStorage.getItem('token');
+    if (!token || token.trim().length === 0) {
+      console.warn('[userService] Token bulunamadı, benzer kullanıcılar getirilemez');
+      return {
+        success: false,
+        message: 'Benzer kullanıcıları görmek için lütfen giriş yapın'
+      };
+    }
+    
+    const cleanToken = token.trim();
+    
+    // API isteği yap
+    const response = await axios.get(`${API_URL}/users/similar`, {
+      params: { page, limit },
+      headers: {
+        'Authorization': `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000 // 10 saniye timeout
+    });
+    
+    if (response.data && response.data.success) {
+      console.log(`[userService] ${response.data.data.length} benzer kullanıcı bulundu`);
+      return response.data;
+    } else {
+      console.error('[userService] Geçersiz API yanıt formatı:', response.data);
+      return {
+        success: false,
+        message: 'Beklenmeyen API yanıt formatı'
+      };
+    }
+  } catch (error) {
+    console.error('[userService] Benzer kullanıcıları getirirken hata:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Benzer kullanıcılar yüklenirken bir hata oluştu'
+    };
+  }
+};
+
 export default {
   loginUser,
   registerUser,
@@ -386,5 +437,6 @@ export default {
   verifyResetCode,
   resetPassword,
   verifyEmailCode,
-  getAllUsers
+  getAllUsers,
+  getSimilarUsers
 }; 

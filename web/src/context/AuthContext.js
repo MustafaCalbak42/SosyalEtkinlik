@@ -43,8 +43,8 @@ export const AuthProvider = ({ children }) => {
           const userData = await getUserProfile();
           
           if (userData && userData.success) {
-            console.log('[AuthContext] User profile fetched successfully:', userData.data.user);
-            setUser(userData.data.user);
+            console.log('[AuthContext] User profile fetched successfully:', userData.data);
+            setUser(userData.data);
           } else {
             console.error('[AuthContext] Failed to fetch user profile:', userData);
             // Token var ama profil alınamadı, token geçersiz olabilir
@@ -81,8 +81,9 @@ export const AuthProvider = ({ children }) => {
       console.log('[AuthContext] Login response:', data);
       
       if (data.success) {
-        console.log('[AuthContext] Login successful, user:', data.data.user);
-        setUser(data.data.user);
+        console.log('[AuthContext] Login successful, user:', data.data);
+        // Kullanıcı verilerini doğru şekilde ayarla
+        setUser(data.data);
         // Kontrol amaçlı token yazdır
         console.log('[AuthContext] Token after login:', localStorage.getItem('token') ? 'Set successfully' : 'Failed to set');
       } else {

@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ProfileInfo from '../components/Profile/ProfileInfo';
 import ProfileActivities from '../components/Profile/ProfileActivities';
+import ProfilePhotoUpload from '../components/Profile/ProfilePhotoUpload';
 import { getUserByUsername, getUserProfile, followUser, unfollowUser } from '../services/userService';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
@@ -117,6 +118,13 @@ const ProfilePage = () => {
       
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
+          {isCurrentUser && (
+            <ProfilePhotoUpload 
+              profile={profile} 
+              setProfile={handleProfileUpdate} 
+            />
+          )}
+          
           <ProfileInfo 
             profile={profile} 
             onProfileUpdate={handleProfileUpdate} 

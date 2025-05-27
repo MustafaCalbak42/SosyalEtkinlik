@@ -20,8 +20,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import EventCard from '../components/EventCard';
+import SimilarUsers from '../components/SimilarUsers';
+import UpcomingEvents from '../components/UpcomingEvents';
 import colors from '../shared/theme/colors';
-import { getAllEvents, getRecommendedEvents, getNearbyEvents } from '../services/eventService';
+import { getAllEvents, getRecommendedEvents, getNearbyEvents, getUpcomingEvents } from '../services/eventService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
@@ -44,7 +46,7 @@ const HomeScreen = ({ navigation }) => {
   const [nearbyError, setNearbyError] = useState('');
   const [userCoordinates, setUserCoordinates] = useState(null);
   const [locationPermissionStatus, setLocationPermissionStatus] = useState(null);
-  const [tabValue, setTabValue] = useState(0); // 0: Etkinlikler, 1: Yakınımdaki, 2: Arkadaşlarım
+  const [tabValue, setTabValue] = useState(0); // 0: Etkinlikler, 1: Yakınımdaki
   const maxDistance = 20; // Sabit maksimum mesafe (km)
   const [isLocationTracking, setIsLocationTracking] = useState(false); // Konum izleme durumu
   const [pagination, setPagination] = useState({
@@ -53,6 +55,11 @@ const HomeScreen = ({ navigation }) => {
     total: 0,
     pages: 1
   });
+  
+  // Yaklaşan etkinlikler için state'ler
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [loadingUpcoming, setLoadingUpcoming] = useState(false);
+  const [errorUpcoming, setErrorUpcoming] = useState('');
 
   const { isLoggedIn, userProfile } = useAuth();
   
@@ -62,7 +69,7 @@ const HomeScreen = ({ navigation }) => {
     { id: 2, name: 'Müzik', icon: 'musical-notes' },
     { id: 3, name: 'Spor', icon: 'basketball' },
     { id: 4, name: 'Sanat', icon: 'color-palette' },
-    { id: 5, name: 'Dans', icon: 'footsteps' },
+    { id: 5, name: 'Dans', icon: 'fitness' },
     { id: 6, name: 'Yemek', icon: 'fast-food' },
     { id: 7, name: 'Teknoloji', icon: 'laptop' },
     { id: 8, name: 'Doğa', icon: 'leaf' }
@@ -82,6 +89,7 @@ const HomeScreen = ({ navigation }) => {
     if (isLoggedIn) {
       console.log('[HomeScreen] Kullanıcı giriş yaptı, önerilen etkinlikler yükleniyor...');
       fetchRecommendedEvents();
+      fetchUpcomingEvents();
     }
   }, [isLoggedIn, selectedCategory]);
 
@@ -249,6 +257,29 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  // Yaklaşan etkinlikleri getir (48 saat içinde başlayacak)
+  const fetchUpcomingEvents = async () => {
+    if (!isLoggedIn) return;
+
+    setLoadingUpcoming(true);
+    setErrorUpcoming('');
+    
+    try {
+      const response = await getUpcomingEvents();
+      if (response.success) {
+        setUpcomingEvents(response.data);
+        console.log(`[HomeScreen] ${response.data.length} yaklaşan etkinlik yüklendi`);
+      } else {
+        setErrorUpcoming(response.message || 'Yaklaşan etkinlikler yüklenirken bir hata oluştu');
+      }
+    } catch (error) {
+      console.error('Yaklaşan etkinlikleri yüklerken hata:', error);
+      setErrorUpcoming('Yaklaşan etkinlikler yüklenirken bir hata oluştu');
+    } finally {
+      setLoadingUpcoming(false);
+    }
+  };
+
   // Konum izni isteme ve kullanıcı konumunu alma
   const requestLocationPermission = async () => {
     try {
@@ -404,8 +435,6 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-
-
   // Yenileme işlemini güncelle
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -423,6 +452,7 @@ const HomeScreen = ({ navigation }) => {
       refreshPromises.push(fetchEvents(1, pagination.limit, selectedCategory));
       if (isLoggedIn) {
         refreshPromises.push(fetchRecommendedEvents());
+        refreshPromises.push(fetchUpcomingEvents());
       }
     } else if (tabValue === 1) {
       // Yakınımdaki sekmesi: konum ve yakındaki etkinlikleri yenile
@@ -708,7 +738,7 @@ const HomeScreen = ({ navigation }) => {
               {suggestions.map((suggestion, index) => (
                 <Text key={index} style={styles.suggestionText}>
                   • {suggestion}
-          </Text>
+                </Text>
               ))}
             </View>
           )}
@@ -735,8 +765,6 @@ const HomeScreen = ({ navigation }) => {
 
     return (
       <View>
-
-
         {/* Etkinlik listesi */}
         <ScrollView
           horizontal
@@ -745,7 +773,7 @@ const HomeScreen = ({ navigation }) => {
         >
           {recommendedEvents.map((item) => (
             <View key={item._id} style={styles.recommendedEventCardContainer}>
-                <EventCard event={item} showRecommendationBadge={true} />
+              <EventCard event={item} showRecommendationBadge={true} />
             </View>
           ))}
         </ScrollView>
@@ -870,8 +898,8 @@ const HomeScreen = ({ navigation }) => {
         contentContainerStyle={styles.eventsList}
         refreshControl={
           <RefreshControl
-            refreshing={nearbyLoading}
-            onRefresh={getUserLocationAndFetchNearbyEvents}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
             colors={[colors.primary.main]}
           />
         }
@@ -921,16 +949,6 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#777" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Etkinlik ara veya ilgi alanı gir..."
-            placeholderTextColor="#999"
-          />
-        </View>
-
         {/* Kategoriler */}
         <View style={styles.categoriesSection}>
           {renderCategories()}
@@ -951,8 +969,6 @@ const HomeScreen = ({ navigation }) => {
               : 'Giriş yapın ve kayıt olurken seçtiğiniz il ve hobiler ile eşleşen özel etkinlikleri keşfedin.'}
           </Text>
           
-
-          
           {!isLoggedIn && (
             <View style={styles.featureInfoCard}>
               <Text style={styles.featureInfoTitle}>💡 Nasıl çalışır?</Text>
@@ -965,10 +981,43 @@ const HomeScreen = ({ navigation }) => {
           )}
           
           {renderRecommendedEvents()}
+        </View>
+        
+        {/* Yaklaşan Etkinlikler Bölümü */}
+        {isLoggedIn && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <Ionicons name="time" size={20} color={colors.primary.main} />
+                <Text style={styles.sectionTitle}>Yaklaşan Etkinlikleriniz (48 Saat İçinde)</Text>
+              </View>
             </View>
-            
-
-
+            <UpcomingEvents 
+              events={upcomingEvents} 
+              loading={loadingUpcoming}
+              error={errorUpcoming}
+              onRetry={fetchUpcomingEvents}
+            />
+            <TouchableOpacity 
+              style={styles.viewAllButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.viewAllButtonText}>Tümünü Görüntüle</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {/* Size Benzer Kişiler Bölümü */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <Ionicons name="people" size={20} color={colors.primary.main} />
+              <Text style={styles.sectionTitle}>Sizinle Aynı Hobilere Sahip Kişiler</Text>
+            </View>
+          </View>
+          <SimilarUsers />
+        </View>
+        
         {/* Tüm Etkinlikler Başlığı */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1094,9 +1143,6 @@ const HomeScreen = ({ navigation }) => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.appTitle}>SosyalEtkinlik</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
-            <Ionicons name="search" size={24} color={colors.primary.main} />
-          </TouchableOpacity>
         </View>
         
         {/* Tab Bar */}
@@ -1126,20 +1172,6 @@ const HomeScreen = ({ navigation }) => {
             />
             <Text style={[styles.tabText, tabValue === 1 && styles.activeTabText]}>
               Yakınımdaki
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, tabValue === 2 && styles.activeTab]} 
-            onPress={() => handleTabChange(2)}
-          >
-            <Ionicons 
-              name={tabValue === 2 ? "people" : "people-outline"} 
-              size={22} 
-              color={tabValue === 2 ? colors.primary.main : colors.text.secondary} 
-            />
-            <Text style={[styles.tabText, tabValue === 2 && styles.activeTabText]}>
-              Arkadaşlarım
             </Text>
           </TouchableOpacity>
         </View>
@@ -1196,29 +1228,9 @@ const HomeScreen = ({ navigation }) => {
               <Pagination />
             )}
           </>
-        ) : tabValue === 1 ? (
-          // Yakınımdaki ekranı
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[colors.primary.main]}
-              />
-            }
-          >
-            {renderNearbyEvents()}
-          </ScrollView>
         ) : (
-          // Arkadaşlarım ekranı (henüz uygulanmadı)
-          <View style={styles.comingSoonContainer}>
-            <Ionicons name="people" size={64} color={colors.grey[400]} />
-            <Text style={styles.comingSoonTitle}>Yakında Geliyor</Text>
-            <Text style={styles.comingSoonText}>
-              Arkadaş listeniz ve arkadaşlarınızın etkinlikleri bu bölümde gösterilecek.
-            </Text>
-          </View>
+          // Yakınımdaki ekranı
+          renderNearbyEvents()
         )}
         
         {/* Create Event Button */}
@@ -1358,25 +1370,6 @@ const styles = StyleSheet.create({
     color: colors.success.main,
     fontWeight: 'bold',
   },
-
-  comingSoonContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
-  },
-  comingSoonTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginTop: 16,
-    marginBottom: 8
-  },
-  comingSoonText: {
-    fontSize: 16,
-    color: colors.text.secondary,
-    textAlign: 'center'
-  },
   scrollContent: {
     flexGrow: 1
   },
@@ -1412,27 +1405,6 @@ const styles = StyleSheet.create({
     color: colors.primary.main,
     fontWeight: 'bold',
     fontSize: 16,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    margin: 16,
-    borderRadius: 8,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
   },
   section: {
     backgroundColor: '#fff',
@@ -1612,7 +1584,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     zIndex: 999,
   },
-  // Size Özel Etkinlikler için yeni stil sınıfları
   infoIconContainer: {
     alignItems: 'center',
     marginBottom: 8,
@@ -1623,122 +1594,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     fontStyle: 'italic',
-  },
-  loadingText: {
-    marginLeft: 8,
-    color: colors.text.secondary,
-    fontSize: 14,
-  },
-  suggestionsList: {
-    marginVertical: 12,
-    paddingLeft: 8,
-  },
-  suggestionText: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  outlineButton: {
-    borderWidth: 1,
-    borderColor: colors.primary.main,
-    backgroundColor: 'transparent',
-  },
-  outlineButtonText: {
-    color: colors.primary.main,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary.main,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  matchInfoCard: {
-    backgroundColor: '#e3f2fd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary.main,
-  },
-  matchInfoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  matchInfoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary.main,
-    marginLeft: 6,
-  },
-  matchInfoDetails: {
-    marginBottom: 8,
-  },
-  matchInfoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  matchInfoLabel: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    minWidth: 60,
-  },
-  matchInfoValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.text.primary,
-    marginLeft: 8,
-    flex: 1,
-  },
-  matchInfoSubtext: {
-    fontSize: 11,
-    color: colors.text.secondary,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  moreEventsContainer: {
-    alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  moreEventsText: {
-    fontSize: 13,
-    color: colors.text.secondary,
-    marginBottom: 8,
-  },
-  moreEventsButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: colors.primary.main,
-    borderRadius: 6,
-    backgroundColor: 'transparent',
-  },
-  moreEventsButtonText: {
-    color: colors.primary.main,
-    fontWeight: '600',
-    fontSize: 13,
   },
   featureInfoCard: {
     backgroundColor: '#fff3e0',
@@ -1759,12 +1614,10 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     lineHeight: 20,
   },
-
   bold: {
     fontWeight: '600',
     color: colors.text.primary,
   },
-  // Filtreleme bilgi kartı stilleri
   filterInfoCard: {
     backgroundColor: '#fff',
     borderRadius: 8,
@@ -1813,6 +1666,34 @@ const styles = StyleSheet.create({
   filterTagText: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  moreEventsContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  moreEventsText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: 8,
+  },
+  moreEventsButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    borderRadius: 6,
+    backgroundColor: 'transparent',
+  },
+  moreEventsButtonText: {
+    color: colors.primary.main,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  eventsLeft: {
+    fontWeight: 'bold',
   },
 });
 

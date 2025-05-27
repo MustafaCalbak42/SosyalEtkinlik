@@ -1092,7 +1092,7 @@ const getUpcomingEvents = async (req, res) => {
     
     // Şu anki tarih
     const now = new Date();
-    // 48 saat sonrası
+    // 48 saat sonrası (2 gün)
     const fortyEightHoursLater = new Date(now.getTime() + (48 * 60 * 60 * 1000));
     
     console.log('[eventController] Tarih aralığı:', {
@@ -1100,8 +1100,13 @@ const getUpcomingEvents = async (req, res) => {
       fortyEightHoursLater: fortyEightHoursLater.toISOString()
     });
     
-    // Kullanıcının katıldığı etkinlikleri bul
-    const user = await User.findById(req.user.id).populate('participatedEvents');
+    // Kullanıcının katıldığı veya oluşturduğu etkinlikleri bul
+    const user = await User.findById(req.user.id).populate({
+      path: 'participatedEvents',
+      match: {
+        status: 'active'
+      }
+    });
     
     if (!user) {
       return res.status(404).json({
@@ -1113,11 +1118,22 @@ const getUpcomingEvents = async (req, res) => {
     // Kullanıcının katıldığı etkinlik ID'lerini al
     const participatedEventIds = user.participatedEvents.map(event => event._id);
     
-    console.log('[eventController] Kullanıcının katıldığı etkinlik sayısı:', participatedEventIds.length);
+    // Kullanıcının oluşturduğu etkinlikleri bul
+    const createdEvents = await Event.find({
+      organizer: req.user.id,
+      status: 'active'
+    });
     
-    // 48 saat içinde başlayacak ve kullanıcının katıldığı etkinlikleri getir
+    const createdEventIds = createdEvents.map(event => event._id);
+    
+    // Tüm kullanıcı etkinliklerini birleştir (katıldığı ve oluşturduğu)
+    const allUserEventIds = [...new Set([...participatedEventIds, ...createdEventIds])];
+    
+    console.log('[eventController] Kullanıcının toplam etkinlik sayısı:', allUserEventIds.length);
+    
+    // 48 saat içinde başlayacak ve kullanıcının ilişkili olduğu etkinlikleri getir
     const upcomingEvents = await Event.find({
-      _id: { $in: participatedEventIds },
+      _id: { $in: allUserEventIds },
       startDate: {
         $gte: now,
         $lte: fortyEightHoursLater
@@ -1130,22 +1146,47 @@ const getUpcomingEvents = async (req, res) => {
     
     console.log(`[eventController] ${upcomingEvents.length} yaklaşan etkinlik bulundu`);
     
+    // Her etkinlik için kullanıcının rolünü belirle
+    const eventsWithUserRole = upcomingEvents.map(event => {
+      const eventObj = event.toObject();
+      
+      if (event.organizer._id.toString() === req.user.id) {
+        eventObj.userRole = 'organizer';
+      } else {
+        eventObj.userRole = 'participant';
+      }
+      
+      // Etkinliğe kalan süreyi hesapla
+      const eventStartDate = new Date(event.startDate);
+      const hoursUntil = Math.floor((eventStartDate - now) / (1000 * 60 * 60));
+      const minutesUntil = Math.floor(((eventStartDate - now) / (1000 * 60)) % 60);
+      
+      eventObj.timeUntilStart = {
+        hours: hoursUntil,
+        minutes: minutesUntil
+      };
+      
+      return eventObj;
+    });
+    
     // Etkinlik bilgilerini logla
-    if (upcomingEvents.length > 0) {
-      console.log('[eventController] Yaklaşan etkinlikler:', upcomingEvents.map(e => ({
+    if (eventsWithUserRole.length > 0) {
+      console.log('[eventController] Yaklaşan etkinlikler:', eventsWithUserRole.map(e => ({
         id: e._id,
         title: e.title,
         startDate: e.startDate,
-        location: e.location?.address || 'Konum belirtilmemiş'
+        location: e.location?.address || 'Konum belirtilmemiş',
+        role: e.userRole,
+        timeUntil: `${e.timeUntilStart.hours} saat ${e.timeUntilStart.minutes} dakika`
       })));
     }
     
     res.json({
       success: true,
-      data: upcomingEvents,
-      message: upcomingEvents.length > 0 
-        ? `${upcomingEvents.length} yaklaşan etkinliğiniz var` 
-        : 'Yaklaşan etkinliğiniz bulunmuyor'
+      data: eventsWithUserRole,
+      message: eventsWithUserRole.length > 0 
+        ? `${eventsWithUserRole.length} yaklaşan etkinliğiniz var` 
+        : 'Önümüzdeki 48 saat içinde etkinliğiniz bulunmuyor'
     });
   } catch (error) {
     console.error('Yaklaşan etkinlikleri getirme hatası:', error);

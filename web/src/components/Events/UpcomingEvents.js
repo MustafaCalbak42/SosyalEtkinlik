@@ -56,7 +56,7 @@ const UpcomingEvents = ({ events = [], loading = false, error = '', onRetry }) =
       <Box sx={{ py: 2, textAlign: 'center' }}>
         <EventIcon sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
         <Typography variant="body2" color="text.secondary">
-          Önümüzdeki 2 gün içinde etkinliğiniz bulunmuyor.
+          Önümüzdeki 48 saat içinde etkinliğiniz bulunmuyor.
         </Typography>
       </Box>
     );

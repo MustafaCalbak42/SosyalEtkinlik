@@ -7,9 +7,10 @@ import {
   Divider, 
   Chip,
   CircularProgress,
-  Alert
+  Alert,
+  Paper
 } from '@mui/material';
-import { Person } from '@mui/icons-material';
+import { Person, Info } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { getSimilarUsers } from '../../services/userService';
 import { useNavigate } from 'react-router-dom';
@@ -50,62 +51,70 @@ const RecommendedUsers = () => {
   // Giriş yapılmamışsa bilgi mesajı göster
   if (!isAuthenticated) {
     return (
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Hobilerinize benzer kullanıcıları görmek için <Button 
-          variant="outlined" 
-          size="small" 
-          color="primary"
-          sx={{ ml: 1 }}
-          onClick={() => navigate('/login')}
-        >
-          Giriş Yapın
-        </Button>
-      </Alert>
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Sizinle aynı hobilere sahip kullanıcıları görmek için <Button 
+            variant="outlined" 
+            size="small" 
+            color="primary"
+            sx={{ ml: 1 }}
+            onClick={() => navigate('/login')}
+          >
+            Giriş Yapın
+          </Button>
+        </Alert>
+      </Paper>
     );
   }
 
   // Yükleme durumu
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-        <CircularProgress size={24} />
-        <Typography variant="body2" sx={{ ml: 2, mt: 0.5 }}>
-          Benzer kullanıcılar yükleniyor...
-        </Typography>
-      </Box>
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+          <CircularProgress size={24} />
+          <Typography variant="body2" sx={{ ml: 2, mt: 0.5 }}>
+            Benzer kullanıcılar yükleniyor...
+          </Typography>
+        </Box>
+      </Paper>
     );
   }
 
   // Hata durumu
   if (error) {
     return (
-      <Alert severity="error" sx={{ mb: 2 }}>
-        {error}
-        <Button 
-          variant="outlined" 
-          size="small" 
-          color="primary"
-          sx={{ mt: 1, ml: 1 }}
-          onClick={fetchSimilarUsers}
-        >
-          Tekrar Dene
-        </Button>
-      </Alert>
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+          <Button 
+            variant="outlined" 
+            size="small" 
+            color="primary"
+            sx={{ mt: 1, ml: 1 }}
+            onClick={fetchSimilarUsers}
+          >
+            Tekrar Dene
+          </Button>
+        </Alert>
+      </Paper>
     );
   }
 
   // Kullanıcı yoksa
   if (users.length === 0) {
     return (
-      <Box sx={{ py: 2, textAlign: 'center' }}>
-        <Person sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Henüz benzer hobilere sahip kullanıcı bulunamadı.
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Profilinizde hobi bilgilerinizi ekleyerek benzer kullanıcıları keşfedebilirsiniz.
-        </Typography>
-      </Box>
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ py: 2, textAlign: 'center' }}>
+          <Person sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Sizinle aynı hobilere sahip kullanıcı bulunamadı.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Profilinizde hobi bilgilerinizi ekleyerek benzer kullanıcıları keşfedebilirsiniz.
+          </Typography>
+        </Box>
+      </Paper>
     );
   }
 
@@ -125,7 +134,7 @@ const RecommendedUsers = () => {
   };
 
   return (
-    <Box>
+    <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
       {users.map((user, index) => (
         <Box key={user._id || user.id}>
           <Box sx={{ py: 1.5 }}>
@@ -166,48 +175,35 @@ const RecommendedUsers = () => {
             
             {/* Ortak hobiler */}
             {user.commonHobbies && user.commonHobbies.length > 0 && (
-              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, ml: 0.5 }}>
-                {user.commonHobbies.slice(0, 3).map(hobby => (
-                  <Chip 
-                    key={hobby._id || hobby.name} 
-                    label={hobby.name || hobby} 
-                    size="small"
-                    variant="outlined" 
-                    color="success"
-                    sx={{ 
-                      height: 24,
-                      '& .MuiChip-label': {
-                        px: 1,
-                        fontSize: '0.7rem'
-                      }
-                    }} 
-                  />
-                ))}
-                {user.commonHobbies.length > 3 && (
-                  <Chip 
-                    label={`+${user.commonHobbies.length - 3}`}
-                    size="small"
-                    variant="outlined" 
-                    color="success"
-                    sx={{ 
-                      height: 24,
-                      '& .MuiChip-label': {
-                        px: 1,
-                        fontSize: '0.7rem'
-                      }
-                    }} 
-                  />
-                )}
-                <Typography variant="caption" sx={{ ml: 0.5 }} color="success.main">
-                  {user.commonHobbiesCount || user.commonHobbies.length} ortak hobi
+              <Box sx={{ ml: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'success.main', display: 'block', mb: 0.5 }}>
+                  {user.commonHobbiesCount || user.commonHobbies.length} ortak hobi:
                 </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                  {user.commonHobbies.map(hobby => (
+                    <Chip 
+                      key={hobby._id || hobby.name} 
+                      label={hobby.name || hobby} 
+                      size="small"
+                      variant="filled" 
+                      color="success"
+                      sx={{ 
+                        height: 24,
+                        '& .MuiChip-label': {
+                          px: 1,
+                          fontSize: '0.7rem'
+                        }
+                      }} 
+                    />
+                  ))}
+                </Box>
               </Box>
             )}
           </Box>
           {index < users.length - 1 && <Divider />}
         </Box>
       ))}
-    </Box>
+    </Paper>
   );
 };
 

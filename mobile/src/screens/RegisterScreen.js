@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   ScrollView,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Image
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
 import HobbiesPicker from '../components/HobbiesPicker';
@@ -33,6 +35,10 @@ const RegisterScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
+  // Profil fotoğrafı state'leri
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [profilePictureError, setProfilePictureError] = useState('');
+  
   // Form validation states
   const [fullNameError, setFullNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
@@ -42,6 +48,48 @@ const RegisterScreen = ({ navigation }) => {
   const [cityError, setCityError] = useState('');
   const [hobbiesError, setHobbiesError] = useState('');
   const [bioError, setBioError] = useState('');
+
+  // Profil fotoğrafı işlemleri
+  const pickImage = async () => {
+    try {
+      // Kamera ve galeri izinlerini iste
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('İzin Gerekli', 'Fotoğraf seçmek için galeri erişim izni gereklidir.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        
+        // Dosya boyutu kontrolü (5MB)
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          setProfilePictureError('Dosya boyutu 5MB\'dan küçük olmalıdır');
+          return;
+        }
+        
+        setProfilePicture(asset);
+        setProfilePictureError('');
+      }
+    } catch (error) {
+      console.error('Resim seçme hatası:', error);
+      Alert.alert('Hata', 'Resim seçilirken bir hata oluştu.');
+    }
+  };
+
+  const removeProfilePicture = () => {
+    setProfilePicture(null);
+    setProfilePictureError('');
+  };
 
   const validateInputs = () => {
     let isValid = true;
@@ -150,8 +198,9 @@ const RegisterScreen = ({ navigation }) => {
       };
       
       console.log('Gönderilen kayıt verisi:', JSON.stringify(registerData, null, 2));
+      console.log('Profil fotoğrafı:', profilePicture);
       
-      const response = await api.auth.register(registerData);
+      const response = await api.auth.register(registerData, profilePicture);
       
       if (response.data && response.data.success) {
         // Kayıt başarılı, kullanıcıyı her zaman email doğrulama ekranına yönlendir
@@ -198,6 +247,51 @@ const RegisterScreen = ({ navigation }) => {
         ) : null}
         
         <View style={styles.formContainer}>
+          {/* Profil Fotoğrafı Yükleme */}
+          <View style={styles.profilePictureContainer}>
+            <Text style={styles.sectionTitle}>Profil Fotoğrafı (İsteğe Bağlı)</Text>
+            
+            <View style={styles.profilePictureWrapper}>
+              <TouchableOpacity 
+                style={[
+                  styles.profilePictureButton,
+                  profilePictureError ? styles.profilePictureButtonError : null
+                ]}
+                onPress={pickImage}
+              >
+                {profilePicture ? (
+                  <Image 
+                    source={{ uri: profilePicture.uri }} 
+                    style={styles.profilePicturePreview}
+                  />
+                ) : (
+                  <View style={styles.profilePicturePlaceholder}>
+                    <MaterialIcons name="add-a-photo" size={40} color="#666" />
+                    <Text style={styles.profilePicturePlaceholderText}>
+                      Fotoğraf Seç
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              {profilePicture && (
+                <TouchableOpacity 
+                  style={styles.removeButton}
+                  onPress={removeProfilePicture}
+                >
+                  <MaterialIcons name="close" size={20} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <Text style={styles.profilePictureHint}>
+              Maksimum 5MB, JPG/PNG formatında
+            </Text>
+            
+            {profilePictureError ? (
+              <Text style={styles.errorText}>{profilePictureError}</Text>
+            ) : null}
+          </View>
           <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
           
           {/* Ad Soyad giriş alanı */}
@@ -496,6 +590,60 @@ const styles = StyleSheet.create({
   loginLink: {
     color: '#1976d2',
     fontWeight: 'bold',
+  },
+  // Profil fotoğrafı stilleri
+  profilePictureContainer: {
+    marginBottom: 20,
+  },
+  profilePictureWrapper: {
+    alignItems: 'center',
+    position: 'relative',
+    marginBottom: 10,
+  },
+  profilePictureButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: '#1976d2',
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+  },
+  profilePictureButtonError: {
+    borderColor: '#c62828',
+  },
+  profilePicturePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  profilePicturePlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profilePicturePlaceholderText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  removeButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#c62828',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: [{ translateX: 15 }, { translateY: -15 }],
+  },
+  profilePictureHint: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 5,
   },
 });
 

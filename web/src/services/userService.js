@@ -64,11 +64,16 @@ export const loginUser = async (loginData) => {
 /**
  * Kullanıcı kaydı yapar
  * @param {Object} registerData - Kayıt bilgileri
+ * @param {File} profilePicture - Profil fotoğrafı dosyası (opsiyonel)
  * @returns {Promise<Object>}
  */
-export const registerUser = async (registerData) => {
+export const registerUser = async (registerData, profilePicture = null) => {
   try {
     console.log('Kullanıcı kaydı başlatılıyor, gelen veriler:', registerData);
+    console.log('Profil fotoğrafı:', profilePicture);
+    
+    // FormData oluştur
+    const formData = new FormData();
     
     // Hobi verilerini işle - Eğer hobiler varsa yalnızca ID'lerini gönder
     let processedData = { ...registerData };
@@ -107,9 +112,37 @@ export const registerUser = async (registerData) => {
       delete processedData.city;
     }
     
-    console.log('Sunucuya gönderilecek veriler:', processedData);
+    // Form verilerini FormData'ya ekle
+    Object.keys(processedData).forEach(key => {
+      if (key === 'hobbies' && Array.isArray(processedData[key])) {
+        // Hobi dizisini JSON string olarak gönder
+        formData.append(key, JSON.stringify(processedData[key]));
+      } else if (key === 'interests' && Array.isArray(processedData[key])) {
+        // İlgi alanları dizisini JSON string olarak gönder
+        formData.append(key, JSON.stringify(processedData[key]));
+      } else if (key === 'location' && typeof processedData[key] === 'object') {
+        // Location nesnesini JSON string olarak gönder
+        formData.append(key, JSON.stringify(processedData[key]));
+      } else {
+        formData.append(key, processedData[key]);
+      }
+    });
     
-    const response = await axios.post(`${API_URL}/register`, processedData);
+    // Profil fotoğrafını ekle
+    if (profilePicture) {
+      formData.append('profilePicture', profilePicture);
+    }
+    
+    console.log('FormData içeriği:');
+    for (let [key, value] of formData.entries()) {
+      console.log(key, value);
+    }
+    
+    const response = await axios.post(`${API_URL}/register`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     
     console.log('Sunucu yanıtı:', response.data);
     

@@ -24,12 +24,41 @@ const registerUser = async (req, res) => {
   }
 
   console.log('Kayıt isteği alındı, body:', req.body);
+  console.log('Yüklenen dosya:', req.file);
   
-  // Hobi verilerini kontrol et
-  if (req.body.hobbies && Array.isArray(req.body.hobbies)) {
-    console.log('Gelen hobiler:', req.body.hobbies);
-  } else {
-    console.log('Hobi verisi gelmedi veya dizi değil:', req.body.hobbies);
+  // JSON string olarak gelen verileri parse et
+  let hobbies = [];
+  let location = null;
+  let interests = [];
+  
+  if (req.body.hobbies) {
+    try {
+      hobbies = typeof req.body.hobbies === 'string' ? JSON.parse(req.body.hobbies) : req.body.hobbies;
+      console.log('Parse edilen hobiler:', hobbies);
+    } catch (error) {
+      console.error('Hobi parse hatası:', error);
+      hobbies = [];
+    }
+  }
+  
+  if (req.body.location) {
+    try {
+      location = typeof req.body.location === 'string' ? JSON.parse(req.body.location) : req.body.location;
+      console.log('Parse edilen konum:', location);
+    } catch (error) {
+      console.error('Konum parse hatası:', error);
+      location = null;
+    }
+  }
+  
+  if (req.body.interests) {
+    try {
+      interests = typeof req.body.interests === 'string' ? JSON.parse(req.body.interests) : req.body.interests;
+      console.log('Parse edilen ilgi alanları:', interests);
+    } catch (error) {
+      console.error('İlgi alanları parse hatası:', error);
+      interests = [];
+    }
   }
 
   const { username, email, password, fullName } = req.body;
@@ -72,32 +101,32 @@ const registerUser = async (req, res) => {
     console.log(`Yeni kullanıcı oluşturuluyor: ${username}, ${email}`);
     
     // Location verisini kontrol et ve düzenle
-    let location = {
+    let finalLocation = {
       type: 'Point',
       coordinates: [0, 0],
       address: ''
     };
     
-    if (req.body.location) {
-      console.log('Gelen konum bilgisi:', req.body.location);
-      
-      if (typeof req.body.location === 'string') {
-        // Eğer sadece string olarak geldiyse (eski istemciler için)
-        location.address = req.body.location;
-      } else if (typeof req.body.location === 'object') {
-        // Yeni yapı - nesne olarak geliyorsa
-        location = {
-          type: req.body.location.type || 'Point',
-          coordinates: req.body.location.coordinates || [0, 0],
-          address: req.body.location.address || ''
-        };
-      }
+    if (location) {
+      console.log('Parse edilen konum bilgisi:', location);
+      finalLocation = {
+        type: location.type || 'Point',
+        coordinates: location.coordinates || [0, 0],
+        address: location.address || ''
+      };
     } else if (req.body.city) {
       // Eski istemciler için city alanını kontrol et
-      location.address = req.body.city;
+      finalLocation.address = req.body.city;
     }
     
-    console.log('Kullanıcı için ayarlanan konum:', location);
+    console.log('Kullanıcı için ayarlanan konum:', finalLocation);
+    
+    // Profil fotoğrafı yolu
+    let profilePicturePath = '';
+    if (req.file) {
+      profilePicturePath = req.file.path.replace(/\\/g, '/').replace('public/', '');
+      console.log('Profil fotoğrafı yüklendi:', profilePicturePath);
+    }
     
     const user = new User({
       username,
@@ -111,16 +140,43 @@ const registerUser = async (req, res) => {
       
       // Diğer kullanıcı verilerini ekleyelim
       bio: req.body.bio || '',
-      hobbies: req.body.hobbies || [],
-      interests: req.body.interests || [],
-      location: location
+      hobbies: hobbies || [],
+      interests: interests || [],
+      location: finalLocation,
+      profilePicture: profilePicturePath
     });
     
-    console.log('Kullanıcı oluşturuldu, hobiler:', req.body.hobbies);
+    console.log('Kullanıcı oluşturuldu, hobiler:', hobbies);
 
     try {
       await user.save();
       console.log(`Kullanıcı veritabanına kaydedildi: ${user._id}`);
+      
+      // Eğer profil fotoğrafı yüklendiyse, dosya adını kullanıcı ID'si ile güncelle
+      if (req.file && user._id) {
+        const fs = require('fs');
+        const path = require('path');
+        
+        const oldPath = req.file.path;
+        const fileExtension = path.extname(req.file.originalname);
+        const newFileName = `profile-${user._id}-${Date.now()}${fileExtension}`;
+        const newPath = path.join('public/uploads/profiles', newFileName);
+        
+        try {
+          // Dosyayı yeni isimle taşı
+          fs.renameSync(oldPath, newPath);
+          
+          // Kullanıcının profil fotoğrafı yolunu güncelle
+          const updatedProfilePicturePath = newPath.replace(/\\/g, '/').replace('public/', '');
+          user.profilePicture = updatedProfilePicturePath;
+          await user.save();
+          
+          console.log('Profil fotoğrafı dosya adı güncellendi:', updatedProfilePicturePath);
+        } catch (fileError) {
+          console.error('Profil fotoğrafı dosya adı güncellenirken hata:', fileError);
+          // Dosya hatası kayıt işlemini etkilemez
+        }
+      }
     } catch (mongoError) {
       console.error('MongoDB kayıt hatası:', mongoError);
       return res.status(500).json({ 
