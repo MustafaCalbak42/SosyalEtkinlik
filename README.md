@@ -45,3 +45,63 @@ E-posta doğrulama ile hesap aktivasyonu
 Kullanıcı verileri MongoDB'de şifreli olarak saklanır
 
 AI destekli içerik analizi ile toksik mesajların engellenmesi
+
+🌐 WEB
+
+
+
+Ana Ekran :
+
+
+
+Giriş Ekranı :
+
+
+
+Yakınımdaki , Yaklaşan Etkinlikler ve Ortak Hobi Kullanıcılar:
+
+
+
+Etkinlik Oluşturma :
+
+
+
+Katılımcıları Görme :
+
+
+
+Mesajlaşma Ekranı :
+
+
+
+📱 MOBİL
+
+
+
+Ana Ekran :
+![ana sayfa](https://github.com/user-attachments/assets/aa70d163-78ea-4c55-abb1-99c2c0aaff24)
+Giriş Ekranı :
+
+
+
+Yakınımdaki Etkinlikleri Görme :
+
+
+
+Etkinlik Oluşturma :
+
+
+
+Kullanıcı Keşfetme :
+
+
+
+Mesajlaşma Ekranı :
+
+
+
+Özel Sohbet :
+
+
+
+Profil Ekranı :
