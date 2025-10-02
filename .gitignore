@@ -42,3 +42,43 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo
+
+# API Keys and Sensitive Configuration
+**/gemini_config.txt
+**/config.txt
+**/*config*.txt
+**/*key*.txt
+**/*secret*.txt
+**/*token*.txt
+**/credentials.json
+**/service-account*.json
+**/.env*
+**/config.env
+**/secrets.env
+
+# Backend specific sensitive files
+backend/.env*
+backend/src/config/.env*
+backend/gemini_config.txt
+backend/config.txt
+
+# Mobile app sensitive files
+mobile/.env*
+mobile/config.txt
+
+# Web app sensitive files
+web/.env*
+web/config.txt
+
+# Any file containing "key", "secret", "token", "password" in name
+*key*
+*secret*
+*token*
+*password*
+*credentials*
+
+# Exclude any .txt files that might contain API keys
+*.key
+*.secret
+*.token
+*.credentials
