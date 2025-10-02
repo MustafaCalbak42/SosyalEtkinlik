@@ -11,13 +11,11 @@ import {
   Image,
   Modal,
   Switch,
-  FlatList,
-  RefreshControl
+  FlatList
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../shared/api/apiClient';
-import { getUserCreatedEvents } from '../services/eventService';
 import AuthContext from '../contexts/AuthContext';
 import { CommonActions } from '@react-navigation/native';
 import colors from '../shared/theme/colors';
@@ -50,13 +48,19 @@ const ProfileScreen = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
+  useEffect(() => {
+    fetchUserProfile();
+    fetchUserEvents();
+    fetchParticipatedEvents();
+  }, []);
+  
+  // AuthContext'ten gelen profil verisini kullan
   useEffect(() => {
     if (userProfile) {
       console.log('Using profile from AuthContext:', userProfile);
       setUser(userProfile);
-      setName(userProfile.fullName || '');
+      setName(userProfile.name || '');
       setEmail(userProfile.email || '');
       setBio(userProfile.bio || '');
       
@@ -80,31 +84,6 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [userProfile]);
   
-  // Komponentin yüklenmesinde ve token değiştiğinde profili yeniden yükle
-  useEffect(() => {
-    const loadProfileData = async () => {
-      console.log('ProfileScreen mount - loading profile data');
-      
-      try {
-        const token = await AsyncStorage.getItem('token');
-        console.log('ProfileScreen - Token mevcut:', !!token);
-        
-        if (token) {
-          fetchUserProfile();
-          fetchUserEvents();
-          fetchParticipatedEvents();
-        } else {
-          console.warn('ProfileScreen - Token bulunamadı, profil yüklenemiyor');
-          setError('Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
-        }
-      } catch (error) {
-        console.error('ProfileScreen token check error:', error);
-      }
-    };
-    
-    loadProfileData();
-  }, []);
-  
   // Kullanıcı profil bilgilerini getir
   const fetchUserProfile = async () => {
     setLoading(true);
@@ -113,49 +92,127 @@ const ProfileScreen = ({ navigation }) => {
     try {
       console.log('Fetching user profile...');
       const response = await api.user.getProfile();
+      
+      // Debug için API yanıtını logla
       console.log('API Yanıtı:', JSON.stringify(response.data, null, 2));
       
-      // Backend yanıt yapısı doğrudan { success: true, data: user } şeklinde
-      if (response.data && response.data.success && response.data.data) {
-        // Backend API'nin döndürdüğü yapıyı doğru şekilde kullan
+      if (response.data && response.data.success) {
+        // API yanıt yapısını kontrol et
         const userData = response.data.data;
         
-        setUser(userData);
-        setName(userData.fullName || '');
-        setEmail(userData.email || '');
-        setBio(userData.bio || '');
+        console.log('Extracted user data:', JSON.stringify(userData, null, 2));
         
-        // Konum bilgisini ayarla
-        if (userData.location) {
-          if (typeof userData.location === 'string') {
-            setLocation(userData.location);
-          } else if (userData.location.address) {
-            setLocation(userData.location.address);
-          } else if (userData.location.city) {
-            setLocation(userData.location.city);
+        if (userData) {
+          // Geçerli bir kullanıcı verisi var
+          setUser(userData);
+          setName(userData.fullName || userData.name || '');
+          setEmail(userData.email || '');
+          setBio(userData.bio || '');
+          
+          // Konum bilgisini ayarla
+          if (userData.location) {
+            if (typeof userData.location === 'string') {
+              setLocation(userData.location);
+            } else if (userData.location.address) {
+              setLocation(userData.location.address);
+            } else if (userData.location.city) {
+              setLocation(userData.location.city);
+            }
+          }
+          
+          // Hobiler
+          if (userData.hobbies && Array.isArray(userData.hobbies)) {
+            setHobbies(userData.hobbies);
+          }
+          
+          // AuthContext'i güncelle
+          if (refreshUserProfile) {
+            console.log('Refreshing user profile in AuthContext...');
+            await refreshUserProfile();
+          }
+        } else {
+          console.error('User data not found in API response');
+          
+          // Eğer AuthContext'te userProfile varsa onu kullan
+          if (userProfile) {
+            console.log('Falling back to userProfile from AuthContext');
+            setUser(userProfile);
+            setName(userProfile.fullName || userProfile.name || '');
+            setEmail(userProfile.email || '');
+            setBio(userProfile.bio || '');
+            
+            if (userProfile.location) {
+              if (typeof userProfile.location === 'string') {
+                setLocation(userProfile.location);
+              } else if (userProfile.location.address) {
+                setLocation(userProfile.location.address);
+              } else if (userProfile.location.city) {
+                setLocation(userProfile.location.city);
+              }
+            }
+            
+            if (userProfile.hobbies && Array.isArray(userProfile.hobbies)) {
+              setHobbies(userProfile.hobbies);
+            }
+          } else {
+            setError('Kullanıcı bilgileri alınamadı');
           }
         }
-        
-        // Hobiler
-        if (userData.hobbies && Array.isArray(userData.hobbies)) {
-          setHobbies(userData.hobbies);
-        }
-        
-        // AuthContext'i güncelle
-        if (refreshUserProfile) {
-          await refreshUserProfile();
-        }
-        
-        setLoading(false);
-        return true;
       } else {
-        console.error('User data not found in response:', response.data);
+        console.error('API response unsuccessful or no data:', response.data);
         
-        // Eğer AuthContext'te userProfile varsa onu kullan
+        // AuthContext'ten profil verisi kullan
         if (userProfile) {
-          console.log('Falling back to userProfile from AuthContext');
+          console.log('API response failed, using AuthContext userProfile');
           setUser(userProfile);
-          setName(userProfile.fullName || '');
+          setName(userProfile.fullName || userProfile.name || '');
+          setEmail(userProfile.email || '');
+          setBio(userProfile.bio || '');
+          
+          // Konum ve hobiler için userProfile'dan veri al
+          if (userProfile.location) {
+            if (typeof userProfile.location === 'string') {
+              setLocation(userProfile.location);
+            } else if (userProfile.location.address) {
+              setLocation(userProfile.location.address);
+            } else if (userProfile.location.city) {
+              setLocation(userProfile.location.city);
+            }
+          }
+          
+          if (userProfile.hobbies && Array.isArray(userProfile.hobbies)) {
+            setHobbies(userProfile.hobbies);
+          }
+        } else {
+          setError('Kullanıcı bilgileri alınamadı');
+        }
+      }
+    } catch (err) {
+      console.error('Profil bilgisi alma hatası:', err);
+      
+      if (err.response?.status === 401) {
+        console.log('401 Unauthorized error - redirecting to login');
+        Alert.alert(
+          'Oturum Süresi Doldu',
+          'Lütfen tekrar giriş yapın.',
+          [
+            {
+              text: 'Tamam',
+              onPress: () => navigation.dispatch(
+                CommonActions.navigate({
+                  name: 'Auth',
+                  params: {},
+                })
+              )
+            }
+          ]
+        );
+      } else {
+        // Eğer API hatası verirse ancak userProfile mevcutsa, bu veriyi kullan
+        if (userProfile) {
+          console.log('API error but using AuthContext userProfile as fallback');
+          setUser(userProfile);
+          setName(userProfile.fullName || userProfile.name || '');
           setEmail(userProfile.email || '');
           setBio(userProfile.bio || '');
           
@@ -173,41 +230,14 @@ const ProfileScreen = ({ navigation }) => {
             setHobbies(userProfile.hobbies);
           }
         } else {
-          setError('Kullanıcı bilgileri alınamadı');
+          setError(
+            err.response?.data?.message || 
+            'Profil bilgileri alınırken bir hata oluştu'
+          );
         }
-        
-        setLoading(false);
-        return false;
       }
-    } catch (err) {
-      console.error('Profil bilgisi alma hatası:', err);
-      
-      if (err.response?.status === 401) {
-        console.log('401 Unauthorized error - redirecting to login');
-        Alert.alert(
-          'Oturum Süresi Doldu',
-          'Lütfen tekrar giriş yapın.',
-          [
-            {
-              text: 'Tamam',
-              onPress: () => {
-                logout();
-                navigation.dispatch(
-                  CommonActions.reset({
-                    index: 0,
-                    routes: [{ name: 'Login' }],
-                  })
-                );
-              },
-            },
-          ]
-        );
-      } else {
-        setError('Profil bilgisi alınamadı: ' + err.message);
-      }
-      
+    } finally {
       setLoading(false);
-      return false;
     }
   };
   
@@ -216,31 +246,14 @@ const ProfileScreen = ({ navigation }) => {
     setLoadingEvents(true);
     
     try {
-      console.log('[ProfileScreen] Kullanıcının oluşturduğu etkinlikler yükleniyor...');
+      // Kullanıcının etkinliklerini getir
+      const response = await api.events.getAll({ userId: 'me' });
       
-      // Kullanıcının oluşturduğu etkinlikleri getir
-      const response = await getUserCreatedEvents();
-      
-      console.log('[ProfileScreen] Oluşturulan etkinlikler API yanıtı:', JSON.stringify(response, null, 2));
-      
-      if (response.success && Array.isArray(response.data)) {
+      if (response.data && Array.isArray(response.data)) {
         setUserEvents(response.data);
-        console.log(`[ProfileScreen] ${response.data.length} oluşturulan etkinlik bulundu`);
-        
-        // İlk 3 etkinliği detaylı olarak logla
-        if (response.data.length > 0) {
-          console.log('[ProfileScreen] İlk oluşturulan etkinlikler:');
-          response.data.slice(0, 3).forEach((event, index) => {
-            console.log(`${index + 1}. ${event.title} - ${new Date(event.startDate).toLocaleString('tr-TR')}`);
-          });
-        }
-      } else {
-        console.error('[ProfileScreen] Beklenmeyen yanıt formatı:', response);
-        setUserEvents([]);
       }
     } catch (error) {
-      console.error('[ProfileScreen] Oluşturulan etkinlikleri yükleme hatası:', error);
-      setUserEvents([]);
+      console.error('Etkinlik yükleme hatası:', error);
     } finally {
       setLoadingEvents(false);
     }
@@ -251,52 +264,25 @@ const ProfileScreen = ({ navigation }) => {
     setLoadingParticipatedEvents(true);
     
     try {
-      console.log('[ProfileScreen] Katıldığı etkinlikler yükleniyor...');
-      
-      // Token kontrolü
-      const token = await AsyncStorage.getItem('token');
-      if (!token || token.trim().length === 0) {
-        console.warn('[ProfileScreen] Token bulunamadı, katıldığı etkinlikler yüklenemiyor');
-        setParticipatedEvents([]);
-        setLoadingParticipatedEvents(false);
-        return;
-      }
-      
       // Kullanıcının katıldığı etkinlikleri getir
       const response = await api.events.getParticipatedEvents();
-      console.log('[ProfileScreen] Katıldığı etkinlikler API yanıtı:', JSON.stringify(response.data, null, 2));
+      console.log('Participated events response:', response);
       
       // Check for different response formats
       if (response.data && response.data.success && Array.isArray(response.data.data)) {
         // Standard API format with success and data properties
-        const events = response.data.data;
-        setParticipatedEvents(events);
-        console.log(`[ProfileScreen] ${events.length} katıldığı etkinlik bulundu`);
-        
-        // İlk 3 etkinliği detaylı olarak logla
-        if (events.length > 0) {
-          console.log('[ProfileScreen] İlk katıldığı etkinlikler:');
-          events.slice(0, 3).forEach((event, index) => {
-            console.log(`${index + 1}. ${event.title} - ${new Date(event.startDate).toLocaleString('tr-TR')}`);
-          });
-        }
+        setParticipatedEvents(response.data.data);
+        console.log(`Found ${response.data.data.length} participated events`);
       } else if (response.data && Array.isArray(response.data)) {
         // Direct array format
         setParticipatedEvents(response.data);
-        console.log(`[ProfileScreen] ${response.data.length} katıldığı etkinlik bulundu (direct array)`);
+        console.log(`Found ${response.data.length} participated events`);
       } else {
-        console.error('[ProfileScreen] Beklenmeyen yanıt formatı:', response.data);
+        console.error('Unexpected response format:', response.data);
         setParticipatedEvents([]);
       }
     } catch (error) {
-      console.error('[ProfileScreen] Katıldığı etkinlikleri yükleme hatası:', error);
-      
-      // API hatası detaylarını logla
-      if (error.response) {
-        console.error('[ProfileScreen] API hatası status:', error.response.status);
-        console.error('[ProfileScreen] API hatası data:', error.response.data);
-      }
-      
+      console.error('Katılınan etkinlikleri yükleme hatası:', error);
       setParticipatedEvents([]);
     } finally {
       setLoadingParticipatedEvents(false);
@@ -503,25 +489,6 @@ const ProfileScreen = ({ navigation }) => {
     return name.charAt(0).toUpperCase();
   };
 
-  // Profil sayfasını yenileme
-  const onRefresh = async () => {
-    setRefreshing(true);
-    
-    try {
-      console.log('[ProfileScreen] Sayfa yenileniyor...');
-      await Promise.all([
-        fetchUserProfile(),
-        fetchUserEvents(),
-        fetchParticipatedEvents()
-      ]);
-      console.log('[ProfileScreen] Sayfa yenileme tamamlandı');
-    } catch (error) {
-      console.error('[ProfileScreen] Sayfa yenileme hatası:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -532,16 +499,7 @@ const ProfileScreen = ({ navigation }) => {
   }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[colors.primary.main]}
-        />
-      }
-    >
+    <ScrollView style={styles.container}>
       {/* Üst Profil Alanı */}
       <View style={styles.headerCard}>
         <View style={styles.headerTop}>
@@ -585,7 +543,15 @@ const ProfileScreen = ({ navigation }) => {
         <View style={styles.userStats}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{userEvents.length}</Text>
-            <Text style={styles.statLabel}>Oluşturduğu Etkinlik</Text>
+            <Text style={styles.statLabel}>Etkinlik</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{user?.followers?.length || 0}</Text>
+            <Text style={styles.statLabel}>Takipçi</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{user?.following?.length || 0}</Text>
+            <Text style={styles.statLabel}>Takip Edilen</Text>
           </View>
         </View>
       </View>

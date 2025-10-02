@@ -188,11 +188,20 @@ export const getUpcomingEvents = async () => {
     }
     
     // API'den yaklaşan etkinlikleri getir
+    console.log('[eventService] Making API request to /events/upcoming with auth token');
+    
     const response = await api.get('/events/upcoming', {
       headers: {
         'Authorization': `Bearer ${token}`
       }
+    }).catch(error => {
+      console.error('[eventService] API request failed:', error.message);
+      console.error('[eventService] Status code:', error.response?.status);
+      console.error('[eventService] Response data:', error.response?.data);
+      throw error; // Hata fırlatarak catch bloğuna geçir
     });
+    
+    console.log('[eventService] API response status:', response.status);
     
     if (response.data && response.data.success) {
       console.log(`[eventService] Successfully fetched ${response.data.data.length} upcoming events`);
@@ -201,14 +210,39 @@ export const getUpcomingEvents = async () => {
       console.error('[eventService] Invalid response format:', response.data);
       return {
         success: false,
-        message: 'Beklenmeyen API yanıt formatı'
+        message: response.data?.message || 'Beklenmeyen API yanıt formatı'
       };
     }
   } catch (error) {
     console.error('[eventService] Error fetching upcoming events:', error);
+    
+    // Daha detaylı hata mesajları
+    let errorMessage = 'Yaklaşan etkinlikler yüklenirken bir hata oluştu';
+    
+    if (error.response) {
+      // Sunucu yanıtı varsa (HTTP hata kodu)
+      console.error('[eventService] Server response error:', error.response.status);
+      console.error('[eventService] Error details:', error.response.data);
+      
+      errorMessage = error.response.data?.message || 
+                    `Sunucu hatası (${error.response.status})`;
+                    
+      // Özel durum: 401 hatası için oturum bilgilerini temizle
+      if (error.response.status === 401) {
+        console.warn('[eventService] Authentication error, clearing token');
+        localStorage.removeItem('token');
+        errorMessage = 'Oturum süresi dolmuş, lütfen tekrar giriş yapın';
+      }
+    } else if (error.request) {
+      // İstek yapıldı ama yanıt alınamadı
+      console.error('[eventService] No response from server');
+      errorMessage = 'Sunucuya erişilemiyor, lütfen internet bağlantınızı kontrol edin';
+    }
+    
     return {
       success: false,
-      message: error.response?.data?.message || 'Yaklaşan etkinlikler yüklenirken bir hata oluştu'
+      message: errorMessage,
+      error: error.message
     };
   }
 };

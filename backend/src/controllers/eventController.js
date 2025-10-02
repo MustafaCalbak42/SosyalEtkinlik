@@ -1101,12 +1101,17 @@ const getUpcomingEvents = async (req, res) => {
     });
     
     // Kullanıcının katıldığı veya oluşturduğu etkinlikleri bul
-    const user = await User.findById(req.user.id).populate({
-      path: 'participatedEvents',
-      match: {
-        status: 'active'
-      }
-    });
+    const user = await User.findById(req.user.id)
+      .populate({
+        path: 'participatedEvents',
+        match: {
+          status: 'active'
+        }
+      })
+      .catch(err => {
+        console.error('[eventController] Kullanıcı bilgileri alınırken hata:', err);
+        return null;
+      });
     
     if (!user) {
       return res.status(404).json({
@@ -1116,12 +1121,17 @@ const getUpcomingEvents = async (req, res) => {
     }
     
     // Kullanıcının katıldığı etkinlik ID'lerini al
-    const participatedEventIds = user.participatedEvents.map(event => event._id);
+    const participatedEventIds = user.participatedEvents 
+      ? user.participatedEvents.map(event => event._id) 
+      : [];
     
     // Kullanıcının oluşturduğu etkinlikleri bul
     const createdEvents = await Event.find({
       organizer: req.user.id,
       status: 'active'
+    }).catch(err => {
+      console.error('[eventController] Oluşturulan etkinlikler alınırken hata:', err);
+      return [];
     });
     
     const createdEventIds = createdEvents.map(event => event._id);
@@ -1130,6 +1140,15 @@ const getUpcomingEvents = async (req, res) => {
     const allUserEventIds = [...new Set([...participatedEventIds, ...createdEventIds])];
     
     console.log('[eventController] Kullanıcının toplam etkinlik sayısı:', allUserEventIds.length);
+    
+    // Kullanıcının hiç etkinliği yoksa, erken dön
+    if (allUserEventIds.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'Önümüzdeki 48 saat içinde etkinliğiniz bulunmuyor'
+      });
+    }
     
     // 48 saat içinde başlayacak ve kullanıcının ilişkili olduğu etkinlikleri getir
     const upcomingEvents = await Event.find({
@@ -1142,7 +1161,11 @@ const getUpcomingEvents = async (req, res) => {
     })
     .populate('organizer', 'username fullName profilePicture')
     .populate('hobby', 'name category')
-    .sort({ startDate: 1 });
+    .sort({ startDate: 1 })
+    .catch(err => {
+      console.error('[eventController] Yaklaşan etkinlikler alınırken hata:', err);
+      return [];
+    });
     
     console.log(`[eventController] ${upcomingEvents.length} yaklaşan etkinlik bulundu`);
     
@@ -1150,7 +1173,8 @@ const getUpcomingEvents = async (req, res) => {
     const eventsWithUserRole = upcomingEvents.map(event => {
       const eventObj = event.toObject();
       
-      if (event.organizer._id.toString() === req.user.id) {
+      if (event.organizer && event.organizer._id && 
+          event.organizer._id.toString() === req.user.id) {
         eventObj.userRole = 'organizer';
       } else {
         eventObj.userRole = 'participant';
@@ -1192,7 +1216,8 @@ const getUpcomingEvents = async (req, res) => {
     console.error('Yaklaşan etkinlikleri getirme hatası:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası'
+      message: 'Yaklaşan etkinlikler alınırken bir hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'SERVER_ERROR'
     });
   }
 };

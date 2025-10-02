@@ -174,14 +174,32 @@ export const getUpcomingEvents = async () => {
     
     // Base URL'i al
     const baseUrl = await getBaseUrl();
+    console.log('[eventService] API endpoint:', `${baseUrl}/events/upcoming`);
     
     // API isteği yap
+    console.log('[eventService] API isteği yapılıyor...');
     const response = await axios.get(`${baseUrl}/events/upcoming`, {
       headers: {
         'Authorization': `Bearer ${cleanToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
+      },
+      timeout: 15000 // 15 saniye timeout
+    }).catch(error => {
+      console.error('[eventService] API isteği başarısız:', error.message);
+      console.error('[eventService] Durum kodu:', error.response?.status);
+      console.error('[eventService] API yanıtı:', error.response?.data);
+      
+      // Hata detaylarını loglayıp fırlat
+      if (error.response) {
+        console.error(`[eventService] Sunucu ${error.response.status} hatası döndürdü`);
+      } else if (error.request) {
+        console.error('[eventService] Sunucudan yanıt alınamadı');
+      } else {
+        console.error('[eventService] İstek oluşturulurken hata:', error.message);
       }
+      
+      throw error; // Hatayı yeniden fırlat
     });
     
     console.log(`[eventService] Yaklaşan etkinlikler API yanıtı: ${response.status}`);
@@ -198,6 +216,8 @@ export const getUpcomingEvents = async () => {
           data: response.data,
           message: 'Yaklaşan etkinlikler'
         };
+      } else {
+        console.error('[eventService] Geçersiz API yanıt formatı:', response.data);
       }
     }
     
@@ -207,9 +227,36 @@ export const getUpcomingEvents = async () => {
     };
   } catch (error) {
     console.error('[eventService] Yaklaşan etkinlikler getirilirken hata:', error);
+    
+    // Daha detaylı hata mesajları
+    let errorMessage = 'Yaklaşan etkinlikler yüklenirken bir hata oluştu';
+    
+    if (error.response) {
+      // Sunucu yanıtı varsa (HTTP hata kodu)
+      console.error('[eventService] Sunucu yanıt hatası:', error.response.status);
+      console.error('[eventService] Hata detayları:', JSON.stringify(error.response.data));
+      
+      errorMessage = error.response.data?.message || 
+                    `Sunucu hatası (${error.response.status})`;
+                    
+      // Özel durum: 401 hatası için oturum bilgilerini temizle
+      if (error.response.status === 401) {
+        console.warn('[eventService] Kimlik doğrulama hatası, token siliniyor');
+        AsyncStorage.removeItem('token').catch(err => 
+          console.error('[eventService] Token silinirken hata:', err)
+        );
+        errorMessage = 'Oturum süresi dolmuş, lütfen tekrar giriş yapın';
+      }
+    } else if (error.request) {
+      // İstek yapıldı ama yanıt alınamadı
+      console.error('[eventService] Sunucudan yanıt alınamadı');
+      errorMessage = 'Sunucuya erişilemiyor, lütfen internet bağlantınızı kontrol edin';
+    }
+    
     return {
       success: false,
-      message: error.message || 'Yaklaşan etkinlikler yüklenirken bir hata oluştu'
+      message: errorMessage,
+      error: error.message || 'Bilinmeyen hata'
     };
   }
 };
